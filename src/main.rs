@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use serde::Deserialize;
 use std::process::{Command, Output};
@@ -19,15 +20,15 @@ struct Args {
 }
 
 /// Run a `niri` command and return its output.
-fn run_command(args: &[&str]) -> Output {
+fn run_niri_command(args: &[&str]) -> anyhow::Result<Output> {
     Command::new("niri")
         .args(args)
         .output()
-        .expect("failed to run command")
+        .with_context(|| format!("failed to run command 'niri {}'", args.join(" ")))
 }
 
 /// Focus a window by its ID.
-fn focus_window_by_id(window_id: u32) {
+fn focus_window_by_id(window_id: u32) -> anyhow::Result<()> {
     let _ = Command::new("niri")
         .args([
             "msg",
@@ -37,25 +38,28 @@ fn focus_window_by_id(window_id: u32) {
             &window_id.to_string(),
         ])
         .spawn()
-        .expect("Failed to focus window")
+        .with_context(|| format!("failed to focus window id {window_id}"))?
         .wait();
+
+    Ok(())
 }
 
 /// Launch an application by its command.
-fn launch_application(app_cmd: &str) {
+fn launch_application(app_cmd: &str) -> anyhow::Result<()> {
     let _ = Command::new(app_cmd)
         .spawn()
-        .expect("Failed to launch application")
-        .wait();
+        .with_context(|| format!("failed to launch application '{app_cmd}'"))?;
+
+    Ok(())
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     // Get all windows
-    let windows_output = run_command(&["msg", "-j", "windows"]);
+    let windows_output = run_niri_command(&["msg", "-j", "windows"])?;
     let windows: Vec<Window> =
-        serde_json::from_slice(&windows_output.stdout).expect("Failed to parse windows JSON");
+        serde_json::from_slice(&windows_output.stdout).context("failed to parse windows JSON")?;
 
     // Filter windows by app_class (case-insensitive)
     let matching_ids: Vec<u32> = windows
@@ -72,14 +76,14 @@ fn main() {
     // Launch the app if no matching windows are found
     if matching_ids.is_empty() {
         let app = args.app_cmd.unwrap_or_else(|| args.app_class.clone());
-        launch_application(&app);
-        return;
+        launch_application(&app)?;
+        return Ok(());
     }
 
     // Find the currently focused window
-    let focused_window_output = run_command(&["msg", "-j", "focused-window"]);
+    let focused_window_output = run_niri_command(&["msg", "-j", "focused-window"])?;
     let focused_window: Window = serde_json::from_slice(&focused_window_output.stdout)
-        .expect("Failed to parse focused window JSON");
+        .context("failed to parse focused window JSON")?;
 
     let target_index = matching_ids
         .iter()
@@ -91,5 +95,7 @@ fn main() {
     // Cycle to the next window of the same `app_class`
     // TODO: cycle based on most recently visited (not sure how to even achieve this)
     let target_index = (target_index + 1) % matching_ids.len();
-    focus_window_by_id(matching_ids[target_index]);
+    focus_window_by_id(matching_ids[target_index])?;
+
+    Ok(())
 }
