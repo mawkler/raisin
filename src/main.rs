@@ -1,0 +1,95 @@
+use clap::Parser;
+use serde::Deserialize;
+use std::process::{Command, Output};
+
+#[derive(Debug, Deserialize)]
+struct Window {
+    id: u32,
+    app_id: String,
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Application's app_id (e.g., firefox)
+    app_class: String,
+
+    /// Command to run the application (e.g., firefox; optional)
+    app_cmd: Option<String>,
+}
+
+/// Run a `niri` command and return its output.
+fn run_command(args: &[&str]) -> Output {
+    Command::new("niri")
+        .args(args)
+        .output()
+        .expect("failed to run command")
+}
+
+/// Focus a window by its ID.
+fn focus_window_by_id(window_id: u32) {
+    let _ = Command::new("niri")
+        .args([
+            "msg",
+            "action",
+            "focus-window",
+            "--id",
+            &window_id.to_string(),
+        ])
+        .spawn()
+        .expect("Failed to focus window")
+        .wait();
+}
+
+/// Launch an application by its command.
+fn launch_application(app_cmd: &str) {
+    let _ = Command::new(app_cmd)
+        .spawn()
+        .expect("Failed to launch application")
+        .wait();
+}
+
+fn main() {
+    let args = Args::parse();
+
+    // Get all windows
+    let windows_output = run_command(&["msg", "-j", "windows"]);
+    let windows: Vec<Window> =
+        serde_json::from_slice(&windows_output.stdout).expect("Failed to parse windows JSON");
+
+    // Filter windows by app_class (case-insensitive)
+    let matching_ids: Vec<u32> = windows
+        .into_iter()
+        .filter(|window| {
+            window
+                .app_id
+                .to_lowercase()
+                .contains(&args.app_class.to_lowercase())
+        })
+        .map(|window| window.id)
+        .collect();
+
+    // Launch the app if no matching windows are found
+    if matching_ids.is_empty() {
+        let app = args.app_cmd.unwrap_or_else(|| args.app_class.clone());
+        launch_application(&app);
+        return;
+    }
+
+    // Find the currently focused window
+    let focused_window_output = run_command(&["msg", "-j", "focused-window"]);
+    let focused_window: Window = serde_json::from_slice(&focused_window_output.stdout)
+        .expect("Failed to parse focused window JSON");
+
+    let target_index = matching_ids
+        .iter()
+        // If we're already focusing a window of the same `app_class`
+        .position(|&id| id == focused_window.id)
+        // Otherwise, pick the first window
+        .unwrap_or(0);
+
+    // Cycle to the next window of the same `app_class`
+    // TODO: cycle based on most recently visited (not sure how to even achieve this)
+    let target_index = (target_index + 1) % matching_ids.len();
+    focus_window_by_id(matching_ids[target_index]);
+}
