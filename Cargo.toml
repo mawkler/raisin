@@ -1,5 +1,6 @@
 [package]
 name = "raisin"
+description = "Run-or-raise for Niri"
 version = "0.1.0"
 edition = "2024"
 
