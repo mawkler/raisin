@@ -10,16 +10,30 @@ struct Window {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    author,
+    version,
+    about,
+    arg_required_else_help = true,
+    after_help = "Examples:\
+        \n  raisin ghostty \
+        \n  raisin brave-browser brave \
+        "
+)]
+/// Run or raise
 struct Args {
-    /// Application's app_id (e.g., firefox)
+    /// Application's app_id (e.g., `com.mitchellh.ghostty`).
+    ///
+    /// Will do partial matching.
     app_class: String,
 
-    /// Command to run the application (e.g., firefox; optional)
+    /// Command to run the application (e.g., `ghostty`). Optional.
+    ///
+    /// If omitted, use `app_class`.
     app_cmd: Option<String>,
 }
 
-/// Run a `niri` command and return its output.
+/// Run a `niri` command and return its output
 fn run_niri_command(args: &[&str]) -> anyhow::Result<Output> {
     Command::new("niri")
         .args(args)
@@ -27,7 +41,7 @@ fn run_niri_command(args: &[&str]) -> anyhow::Result<Output> {
         .with_context(|| format!("failed to run command 'niri {}'", args.join(" ")))
 }
 
-/// Focus a window by its ID.
+/// Focus a window by its ID
 fn focus_window_by_id(window_id: u32) -> anyhow::Result<()> {
     let _ = Command::new("niri")
         .args([
@@ -44,7 +58,7 @@ fn focus_window_by_id(window_id: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Launch an application by its command.
+/// Launch an application by its command
 fn launch_application(app_cmd: &str) -> anyhow::Result<()> {
     let _ = Command::new(app_cmd)
         .spawn()
@@ -68,6 +82,7 @@ fn main() -> anyhow::Result<()> {
             window
                 .app_id
                 .to_lowercase()
+                // TODO: add option to do strict matching
                 .contains(&args.app_class.to_lowercase())
         })
         .map(|window| window.id)
