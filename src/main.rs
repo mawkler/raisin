@@ -96,20 +96,26 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Find the currently focused window
-    let focused_window_output = run_niri_command(&["msg", "-j", "focused-window"])?;
-    let focused_window: Window = serde_json::from_slice(&focused_window_output.stdout)
+    let focused_window_json = run_niri_command(&["msg", "-j", "focused-window"])?;
+    let focused_window_json = String::from_utf8_lossy(&focused_window_json.stdout);
+    let focused_window: Option<Window> = serde_json::from_str(&focused_window_json)
         .context("failed to parse focused window JSON")?;
 
-    let target_index = matching_ids
-        .iter()
-        // If we're already focusing a window of the same `app_class`
-        .position(|&id| id == focused_window.id)
-        // Otherwise, pick the first window
-        .unwrap_or(0);
+    const FIRST_WINDOW_INDEX: usize = 0;
+
+    let target_window_index = match focused_window {
+        None => FIRST_WINDOW_INDEX,
+        Some(window) => matching_ids
+            .iter()
+            // If we're already focusing a window of the same `app_class`
+            .position(|&id| id == window.id)
+            // Otherwise, pick the first window
+            .unwrap_or(FIRST_WINDOW_INDEX),
+    };
 
     // Cycle to the next window of the same `app_class`
-    // TODO: cycle based on most recently visited (not sure how to even achieve this)
-    let target_index = (target_index + 1) % matching_ids.len();
+    // TODO: cycle based on most recently visited (not sure how to even achieve this),
+    let target_index = (target_window_index + 1) % matching_ids.len();
     focus_window_by_id(matching_ids[target_index])?;
 
     Ok(())
