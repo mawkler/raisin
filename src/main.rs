@@ -1,12 +1,20 @@
 use anyhow::Context;
 use clap::Parser;
 use serde::Deserialize;
+use std::cmp::Reverse;
 use std::process::{Command, Output};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Ord, PartialOrd, Eq, PartialEq)]
+struct Timestamp {
+    secs: u64,
+    nanos: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 struct Window {
     id: u32,
     app_id: String,
+    last_focused: Timestamp,
 }
 
 #[derive(Parser, Debug)]
@@ -75,8 +83,9 @@ fn main() -> anyhow::Result<()> {
     let windows: Vec<Window> =
         serde_json::from_slice(&windows_output.stdout).context("failed to parse windows JSON")?;
 
-    // Filter windows by app_class (case-insensitive)
-    let matching_ids: Vec<u32> = windows
+    // Filter windows by app_class (case-insensitive), then sort by `last_focused` descending (most
+    // recently focused first) so cycling visits windows in recency order
+    let mut matching_windows: Vec<Window> = windows
         .into_iter()
         .filter(|window| {
             window
@@ -85,17 +94,18 @@ fn main() -> anyhow::Result<()> {
                 // TODO: add option to do strict matching
                 .contains(&args.app_class.to_lowercase())
         })
-        .map(|window| window.id)
         .collect();
 
-    // Launch the app if no matching windows are found
-    if matching_ids.is_empty() {
+    matching_windows.sort_by_key(|w| Reverse(w.last_focused.clone()));
+
+    // No matching windows found - launch the app
+    if matching_windows.is_empty() {
         let app = args.app_cmd.unwrap_or_else(|| args.app_class.clone());
         launch_application(&app)?;
         return Ok(());
     }
 
-    // Find the currently focused window
+    // Otherwise, find the currently focused window
     let focused_window_json = run_niri_command(&["msg", "-j", "focused-window"])?;
     let focused_window_json = String::from_utf8_lossy(&focused_window_json.stdout);
     let focused_window: Option<Window> = serde_json::from_str(&focused_window_json)
@@ -105,18 +115,17 @@ fn main() -> anyhow::Result<()> {
 
     let target_window_index = match focused_window {
         None => FIRST_WINDOW_INDEX,
-        Some(window) => matching_ids
+        Some(window) => matching_windows
             .iter()
             // If we're already focusing a window of the same `app_class`
-            .position(|&id| id == window.id)
+            .position(|w| w.id == window.id)
             // Otherwise, pick the first window
             .unwrap_or(FIRST_WINDOW_INDEX),
     };
 
-    // Cycle to the next window of the same `app_class`
-    // TODO: cycle based on most recently visited (not sure how to even achieve this),
-    let target_index = (target_window_index + 1) % matching_ids.len();
-    focus_window_by_id(matching_ids[target_index])?;
+    // Cycle to the next window of the same app_class (most recently visited first)
+    let target_index = (target_window_index + 1) % matching_windows.len();
+    focus_window_by_id(matching_windows[target_index].id)?;
 
     Ok(())
 }
