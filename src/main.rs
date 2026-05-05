@@ -4,6 +4,9 @@ use serde::Deserialize;
 use std::cmp::Reverse;
 use std::process::{Command, Output};
 
+mod compositor;
+mod integrations;
+
 #[derive(Debug, Clone, Deserialize, Ord, PartialOrd, Eq, PartialEq)]
 struct Timestamp {
     secs: u64,
