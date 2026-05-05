@@ -16,13 +16,17 @@ pub struct NiriWindow {
     title: String,
 }
 
-impl Window for NiriWindow {
-    type Id = u32;
-    type Timestamp = Timestamp;
-
-    fn id(&self) -> &Self::Id {
-        &self.id
+// `Eq` implemented manually to compare only the window ID
+impl PartialEq for NiriWindow {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
+}
+
+impl Eq for NiriWindow {}
+
+impl Window for NiriWindow {
+    type Timestamp = Timestamp;
 
     fn app_id(&self) -> &str {
         &self.app_id
@@ -64,9 +68,10 @@ impl Compositor for NiriCompositor {
         Ok(focused_window)
     }
 
-    fn focus_window(id: &<Self::Win as Window>::Id) -> Result<()> {
+    fn focus_window(window: &Self::Win) -> Result<()> {
+        let id = window.id.to_string();
         let _ = Command::new("niri")
-            .args(["msg", "action", "focus-window", "--id", &id.to_string()])
+            .args(["msg", "action", "focus-window", "--id", &id])
             .spawn()
             .with_context(|| format!("failed to focus window id {id}"))?
             .wait();
