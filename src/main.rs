@@ -1,7 +1,6 @@
-use crate::compositor::Window;
 use anyhow::Context;
 use clap::Parser;
-use compositor::Compositor;
+use compositor::{Compositor, Window};
 use std::cmp::Reverse;
 
 mod compositor;
@@ -32,23 +31,19 @@ struct Args {
 }
 
 /// Detect which compositor is running
-fn detect_compositor() -> anyhow::Result<String> {
+fn detect_compositor() -> Option<String> {
     // Check environment variable first
     if let Ok(compositor) = std::env::var("RAISIN_COMPOSITOR") {
-        return Ok(compositor);
+        return Some(compositor);
     }
 
-    // Check if niri is running
-    if std::process::Command::new("niri")
-        .args(["msg", "--json", "windows"])
-        .output()
-        .is_ok()
-    {
-        return Ok("niri".to_string());
+    // TODO: is there a way to iterate over all `Compositors` and pick the first one that's running?
+    // Check each compositor using is_running()
+    if integrations::niri::NiriCompositor::is_running() {
+        return Some("niri".to_string());
     }
 
-    // Add more detection logic here (sway, hyprland, etc.)
-    anyhow::bail!("Could not detect compositor. Set `RAISIN_COMPOSITOR` or ensure niri is running.")
+    None
 }
 
 fn run<C: Compositor>() -> anyhow::Result<()> {

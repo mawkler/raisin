@@ -23,6 +23,9 @@ pub trait Compositor {
     fn get_focused_window() -> Result<Option<Self::Win>>;
     fn focus_window(window: &Self::Win) -> Result<()>;
 
+    /// Check if this compositor is currently running. Used for auto-detection at runtime.
+    fn is_running() -> bool;
+
     /// Launch an application by its command name.
     fn launch_application(cmd: &str) -> Result<()> {
         let _ = Command::new(cmd)

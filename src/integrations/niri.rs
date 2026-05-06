@@ -1,6 +1,6 @@
 use crate::compositor::{Compositor, Window};
 use anyhow::{Context, Result};
-use std::process::Command;
+use std::process::{Command, Output};
 
 #[derive(Debug, Clone, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Timestamp {
@@ -41,7 +41,7 @@ impl Window for NiriWindow {
     }
 }
 
-fn run_niri_command(args: &[&str]) -> Result<std::process::Output> {
+fn run_niri_command(args: &[&str]) -> Result<Output> {
     Command::new("niri")
         .args(args)
         .output()
@@ -52,6 +52,11 @@ pub struct NiriCompositor;
 
 impl Compositor for NiriCompositor {
     type Win = NiriWindow;
+
+    fn is_running() -> bool {
+        std::env::var("NIRI_SOCKET").is_ok()
+            || Command::new("niri").arg("--version").output().is_ok()
+    }
 
     fn get_windows() -> Result<Vec<Self::Win>> {
         let windows_output = run_niri_command(&["msg", "--json", "windows"])?;
