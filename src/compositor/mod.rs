@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::fmt::Debug;
 use std::process::Command;
 
+pub(crate) mod integrations;
+
 /// NOTE: When implementing `Eq` for your `Window` type, do NOT simply derive it
 /// as that would compare all fields (including timestamps, titles, etc.).
 /// Instead, implement `PartialEq`/`Eq` manually to compare only the window

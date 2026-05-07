@@ -3,8 +3,9 @@ use clap::Parser;
 use compositor::{Compositor, Window};
 use std::cmp::Reverse;
 
+use crate::compositor::integrations::niri::NiriCompositor;
+
 mod compositor;
-mod integrations;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -39,7 +40,7 @@ fn detect_compositor() -> Option<String> {
 
     // TODO: is there a way to iterate over all `Compositors` and pick the first one that's running?
     // Check each compositor using is_running()
-    if integrations::niri::NiriCompositor::is_running() {
+    if NiriCompositor::is_running() {
         return Some("niri".to_string());
     }
 
@@ -98,7 +99,7 @@ fn main() -> anyhow::Result<()> {
     let compositor = detect_compositor().context("failed to detect compositor type")?;
 
     match compositor.as_str() {
-        "niri" => run::<integrations::niri::NiriCompositor>(),
+        "niri" => run::<NiriCompositor>(),
         _ => anyhow::bail!("unsupported compositor: '{compositor}'"),
     }
 }
