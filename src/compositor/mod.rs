@@ -15,6 +15,7 @@ pub trait Window: Debug + Send + Sync + Eq {
 
     fn app_id(&self) -> &str;
     fn last_focused(&self) -> &Self::Timestamp;
+    #[allow(unused)]
     fn title(&self) -> &str;
 }
 

@@ -1,35 +1,11 @@
+use crate::compositor::integrations::niri::NiriCompositor;
 use anyhow::Context;
 use clap::Parser;
 use compositor::{Compositor, Window};
 use std::cmp::Reverse;
 
-use crate::compositor::integrations::niri::NiriCompositor;
-
+mod cli;
 mod compositor;
-
-#[derive(Parser, Debug)]
-#[command(
-    author,
-    version,
-    about,
-    arg_required_else_help = true,
-    after_help = "Examples:\
-        \n  raisin ghostty \
-        \n  raisin brave-browser brave \
-        "
-)]
-/// Run or raise
-struct Args {
-    /// Application's app_id (e.g., `com.mitchellh.ghostty`).
-    ///
-    /// Will do partial matching.
-    app_class: String,
-
-    /// Command to run the application (e.g., `ghostty`). Optional.
-    ///
-    /// If omitted, use `app_class`.
-    app_cmd: Option<String>,
-}
 
 /// Detect which compositor is running
 fn detect_compositor() -> Option<String> {
@@ -48,7 +24,7 @@ fn detect_compositor() -> Option<String> {
 }
 
 fn run<C: Compositor>() -> anyhow::Result<()> {
-    let args = Args::parse();
+    let args = cli::Args::parse();
 
     // Filter open windows by app_class (case-insensitive)
     let windows = C::get_windows().context("failed to get windows")?;
