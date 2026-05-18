@@ -74,10 +74,17 @@ impl Compositor for HyprlandCompositor {
 
     fn is_running() -> bool {
         std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+            || Command::new("hyprctl").arg("version").output().is_ok()
     }
 
     fn get_windows() -> Result<Vec<Self::Win>> {
         let output = run_hyprctl_command(&["clients", "-j"])?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "hyprctl clients -j failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         let windows: Vec<HyprlandWindow> = serde_json::from_slice(&output.stdout)
             .context("failed to parse JSON output of clients command")?;
         Ok(windows)
@@ -85,6 +92,12 @@ impl Compositor for HyprlandCompositor {
 
     fn get_focused_window() -> Result<Option<Self::Win>> {
         let output = run_hyprctl_command(&["activewindow", "-j"])?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "hyprctl activewindow -j failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         let output = String::from_utf8_lossy(&output.stdout);
         let trimmed = output.trim();
 
@@ -100,11 +113,15 @@ impl Compositor for HyprlandCompositor {
 
     fn focus_window(window: &Self::Win) -> Result<()> {
         let address = &window.address;
-        let _ = Command::new("hyprctl")
+        let output = Command::new("hyprctl")
             .args(["dispatch", "focuswindow", &format!("address:{address}")])
-            .spawn()
-            .with_context(|| format!("failed to focus window {address}"))?
-            .wait();
+            .output()
+            .with_context(|| format!("failed to run hyprctl dispatch for {address}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            eprintln!("warning: failed to focus window {address}: {stdout}{stderr}");
+        }
         Ok(())
     }
 }
