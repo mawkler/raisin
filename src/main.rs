@@ -1,3 +1,4 @@
+use crate::compositor::integrations::hyprland::HyprlandCompositor;
 use crate::compositor::integrations::niri::NiriCompositor;
 use anyhow::Context;
 use clap::Parser;
@@ -16,6 +17,9 @@ fn detect_compositor() -> Option<String> {
 
     // TODO: is there a way to iterate over all `Compositors` and pick the first one that's running?
     // Check each compositor using is_running()
+    if HyprlandCompositor::is_running() {
+        return Some("hyprland".to_string());
+    }
     if NiriCompositor::is_running() {
         return Some("niri".to_string());
     }
@@ -75,6 +79,7 @@ fn main() -> anyhow::Result<()> {
     let compositor = detect_compositor().context("failed to detect compositor type")?;
 
     match compositor.as_str() {
+        "hyprland" => run::<HyprlandCompositor>(),
         "niri" => run::<NiriCompositor>(),
         _ => anyhow::bail!("unsupported compositor: '{compositor}'"),
     }

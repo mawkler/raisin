@@ -1,0 +1,110 @@
+use crate::compositor::{Compositor, Window};
+use anyhow::{Context, Result};
+use std::cmp::Ordering;
+use std::process::{Command, Output};
+
+// Hyprland uses a relative order for focus history rather than timestamps
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FocusOrder(u32);
+
+impl PartialOrd for FocusOrder {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FocusOrder {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.0.cmp(&self.0)
+    }
+}
+
+impl PartialEq for FocusOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for FocusOrder {}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct HyprlandWindow {
+    address: String,
+    class: String,
+    #[serde(rename = "focusHistoryID")]
+    focus_history_id: FocusOrder,
+    title: String,
+}
+
+impl PartialEq for HyprlandWindow {
+    fn eq(&self, other: &Self) -> bool {
+        self.address == other.address
+    }
+}
+
+impl Eq for HyprlandWindow {}
+
+impl Window for HyprlandWindow {
+    type Timestamp = FocusOrder;
+
+    fn app_id(&self) -> &str {
+        &self.class
+    }
+
+    fn last_focused(&self) -> &Self::Timestamp {
+        &self.focus_history_id
+    }
+
+    fn title(&self) -> &str {
+        &self.title
+    }
+}
+
+fn run_hyprctl_command(args: &[&str]) -> Result<Output> {
+    Command::new("hyprctl")
+        .args(args)
+        .output()
+        .with_context(|| format!("failed to run command 'hyprctl {}'", args.join(" ")))
+}
+
+pub struct HyprlandCompositor;
+
+impl Compositor for HyprlandCompositor {
+    type Win = HyprlandWindow;
+
+    fn is_running() -> bool {
+        std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+    }
+
+    fn get_windows() -> Result<Vec<Self::Win>> {
+        let output = run_hyprctl_command(&["clients", "-j"])?;
+        let windows: Vec<HyprlandWindow> = serde_json::from_slice(&output.stdout)
+            .context("failed to parse JSON output of clients command")?;
+        Ok(windows)
+    }
+
+    fn get_focused_window() -> Result<Option<Self::Win>> {
+        let output = run_hyprctl_command(&["activewindow", "-j"])?;
+        let output = String::from_utf8_lossy(&output.stdout);
+        let trimmed = output.trim();
+
+        // No window focused
+        if trimmed.is_empty() || trimmed == "{}" {
+            return Ok(None);
+        }
+
+        let window: HyprlandWindow =
+            serde_json::from_str(trimmed).context("failed to parse active window's JSON")?;
+        Ok(Some(window))
+    }
+
+    fn focus_window(window: &Self::Win) -> Result<()> {
+        let address = &window.address;
+        let _ = Command::new("hyprctl")
+            .args(["dispatch", "focuswindow", &format!("address:{address}")])
+            .spawn()
+            .with_context(|| format!("failed to focus window {address}"))?
+            .wait();
+        Ok(())
+    }
+}

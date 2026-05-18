@@ -66,7 +66,7 @@ impl Compositor for NiriCompositor {
     }
 
     fn get_focused_window() -> Result<Option<Self::Win>> {
-        let focused_window_json = run_niri_command(&["msg", "-j", "focused-window"])?;
+        let focused_window_json = run_niri_command(&["msg", "--json", "focused-window"])?;
         let focused_window_json = String::from_utf8_lossy(&focused_window_json.stdout);
         let focused_window: Option<NiriWindow> = serde_json::from_str(&focused_window_json)
             .context("failed to parse focused window JSON")?;
