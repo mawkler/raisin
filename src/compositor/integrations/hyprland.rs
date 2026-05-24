@@ -113,15 +113,23 @@ impl Compositor for HyprlandCompositor {
 
     fn focus_window(window: &Self::Win) -> Result<()> {
         let address = &window.address;
+        let focus = &format!("hl.dsp.focus({{ window = 'address:{address}' }})");
         let output = Command::new("hyprctl")
-            .args(["dispatch", "focuswindow", &format!("address:{address}")])
+            .args(["dispatch", focus])
             .output()
             .with_context(|| format!("failed to run hyprctl dispatch for {address}"))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        if stdout.starts_with("warning:") {
+            eprintln!("got warning when focusing window {address}: {stdout}");
+        }
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            eprintln!("warning: failed to focus window {address}: {stdout}{stderr}");
+            eprintln!("failed to focus window {address}: {stdout}{stderr}");
         }
+
         Ok(())
     }
 }
