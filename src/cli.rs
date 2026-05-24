@@ -6,18 +6,17 @@
     arg_required_else_help = true,
     after_help = "Examples:\
         \n  raisin ghostty \
-        \n  raisin brave-browser brave \
+        \n  raisin brave brave-browser \
         "
 )]
 /// Run or raise
 pub(crate) struct Args {
-    /// Application's app_id (e.g., `com.mitchellh.ghostty`).
-    ///
-    /// Will do partial matching.
-    pub(crate) app_class: String,
+    /// Command to run the application (e.g., `ghostty`).
+    pub(crate) app: String,
 
-    /// Command to run the application (e.g., `ghostty`). Optional.
+    /// Window app_id to match (e.g., `com.mitchellh.ghostty`). Optional.
     ///
-    /// If omitted, use `app_class`.
-    pub(crate) app_cmd: Option<String>,
+    /// If omitted, the app name is used as a substring to match against
+    /// window class names.
+    pub(crate) app_id: Option<String>,
 }

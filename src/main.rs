@@ -30,7 +30,8 @@ fn detect_compositor() -> Option<String> {
 fn run<C: Compositor>() -> anyhow::Result<()> {
     let args = cli::Args::parse();
 
-    // Filter open windows by app_class (case-insensitive)
+    // Filter open windows by app_id (case-insensitive)
+    let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
     let windows = C::get_windows().context("failed to get windows")?;
     let mut matching_windows: Vec<_> = windows
         .into_iter()
@@ -39,7 +40,7 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
                 .app_id()
                 .to_lowercase()
                 // TODO: add option to do strict matching
-                .contains(&args.app_class.to_lowercase())
+                .contains(&search_string)
         })
         .collect();
 
@@ -48,8 +49,7 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
 
     // If no matching window is found, launch the app
     if matching_windows.is_empty() {
-        let app = args.app_cmd.unwrap_or_else(|| args.app_class.clone());
-        C::launch_application(&app)?;
+        C::launch_application(&args.app)?;
         return Ok(());
     }
 
