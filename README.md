@@ -1,36 +1,45 @@
-# Rasin
+# Raisin 🍇
 
-Run-or-raise for [Niri](https://github.com/YaLTeR/niri).
+*Run-or-raise*:
+
+- If the program isn't running: launch it
+- If the program is running: jump to one of its windows (and cycle through them if there's more than one)
+
+Intended to be called from a compositor keybinding like so:
+
+- `super + t`: terminal
+- `super + w`: web browser
+- `super + s`: spotify
+- etc...
+
+Currently supports [Niri](https://github.com/YaLTeR/niri) and [Hyprland](https://hyprland.org), but has a small integration layer for adding support for more compositors in the future.
 
 ## Run/install
 
 ### Run with Nix
 
-`nix run github:mawkler/maconomy-cli -- <program_name>`
+`nix run github:mawkler/raisin -- <app>`
 
 ### Install with cargo
 
-`cargo install github:mawkler/maconomy-cli -- <program_name>`
+`cargo install --git github:mawkler/raisin`
 
 ## Usage
 
-Output of `raisin --help`
-
 ```help
-Run-or-raise for Niri
+Run-or-raise for Niri and Hyprland
 
-Usage: raisin <APP_CLASS> [APP_CMD]
+Usage: raisin <APP> [APP_ID]
 
 Arguments:
-  <APP_CLASS>
-          Application's app_id (e.g., `com.mitchellh.ghostty`).
+  <APP>
+          Command to run the application (e.g., `ghostty`).
 
-          Will do partial matching.
+  [APP_ID]
+          Window app_id to match (e.g., `com.mitchellh.ghostty`). Optional.
 
-  [APP_CMD]
-          Command to run the application (e.g., `ghostty`). Optional.
-
-          If omitted, use `app_class`.
+          If omitted, the app name is used as a substring to match against
+          window class names.
 
 Options:
   -h, --help
@@ -41,5 +50,5 @@ Options:
 
 Examples:
   raisin ghostty
-  raisin brave-browser brave
+  raisin ghostty com.mitchellh.ghostty
 ```
