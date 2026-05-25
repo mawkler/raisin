@@ -6,7 +6,7 @@
     arg_required_else_help = true,
     after_help = "Examples:\
         \n  raisin ghostty \
-        \n  raisin brave brave-browser \
+        \n  raisin ghostty com.mitchellh.ghostty \
         "
 )]
 /// Run or raise

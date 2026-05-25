@@ -33,13 +33,12 @@ Usage: raisin <APP> [APP_ID]
 
 Arguments:
   <APP>
-          Command to run the application (e.g., `ghostty`).
+          Command to run the application (e.g., `ghostty`)
 
   [APP_ID]
           Window app_id to match (e.g., `com.mitchellh.ghostty`). Optional.
 
-          If omitted, the app name is used as a substring to match against
-          window class names.
+          If omitted, the app name is used as a substring to match against window class names.
 
 Options:
   -h, --help

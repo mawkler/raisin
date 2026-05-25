@@ -1,5 +1,5 @@
 {
-  description = "Run-or-raise for Niri";
+  description = "Run-or-raise for Niri and Hyprland";
 
   inputs = {
     naersk.url = "github:nix-community/naersk/master";
