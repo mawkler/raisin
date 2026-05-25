@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::fmt::Debug;
 use std::process::Command;
 
+pub(crate) mod detection;
 pub(crate) mod integrations;
 
 /// NOTE: When implementing `Eq` for your `Window` type, do NOT simply derive it
@@ -27,7 +28,9 @@ pub trait Compositor {
     fn focus_window(window: &Self::Win) -> Result<()>;
 
     /// Check if this compositor is currently running. Used for auto-detection at runtime.
-    fn is_running() -> bool;
+    fn is_running() -> bool {
+        false
+    }
 
     /// Launch an application by its command name.
     fn launch_application(cmd: &str) -> Result<()> {

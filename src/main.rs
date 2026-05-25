@@ -1,31 +1,16 @@
-use crate::compositor::integrations::hyprland::HyprlandCompositor;
-use crate::compositor::integrations::niri::NiriCompositor;
 use anyhow::Context;
 use clap::Parser;
+use compositor::detection::CompositorInstance;
 use compositor::{Compositor, Window};
 use std::cmp::Reverse;
 
+use crate::compositor::{
+    detection::detect_compositor,
+    integrations::{hyprland::HyprlandCompositor, niri::NiriCompositor},
+};
+
 mod cli;
 mod compositor;
-
-/// Detect which compositor is running
-fn detect_compositor() -> Option<String> {
-    // Check environment variable first
-    if let Ok(compositor) = std::env::var("RAISIN_COMPOSITOR") {
-        return Some(compositor);
-    }
-
-    // TODO: is there a way to iterate over all `Compositors` and pick the first one that's running?
-    // Check each compositor using is_running()
-    if HyprlandCompositor::is_running() {
-        return Some("hyprland".to_string());
-    }
-    if NiriCompositor::is_running() {
-        return Some("niri".to_string());
-    }
-
-    None
-}
 
 fn run<C: Compositor>() -> anyhow::Result<()> {
     let args = cli::Args::parse();
@@ -75,12 +60,16 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
     Ok(())
 }
 
+impl CompositorInstance {
+    fn run_raisin(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Hyprland => run::<HyprlandCompositor>(),
+            Self::Niri => run::<NiriCompositor>(),
+        }
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let compositor = detect_compositor().context("failed to detect compositor type")?;
-
-    match compositor.as_str() {
-        "hyprland" => run::<HyprlandCompositor>(),
-        "niri" => run::<NiriCompositor>(),
-        _ => anyhow::bail!("unsupported compositor: '{compositor}'"),
-    }
+    compositor.run_raisin()
 }
