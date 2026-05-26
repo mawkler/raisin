@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use crate::compositor::{Compositor, Window};
 
 // Hyprland uses a relative order for focus history rather than timestamps
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct FocusOrder(u32);
 
 impl PartialOrd for FocusOrder {
@@ -20,19 +20,11 @@ impl Ord for FocusOrder {
     }
 }
 
-impl PartialEq for FocusOrder {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for FocusOrder {}
-
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HyprlandWindow {
     address: String,
     class: String,
-    #[serde(rename = "focusHistoryID")]
     focus_history_id: FocusOrder,
     title: String,
 }
