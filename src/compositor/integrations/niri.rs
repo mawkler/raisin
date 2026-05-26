@@ -1,6 +1,7 @@
-use crate::compositor::{Compositor, Window};
 use anyhow::{Context, Result};
 use std::process::{Command, Output};
+
+use crate::compositor::{Compositor, Window};
 
 #[derive(Debug, Clone, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Timestamp {

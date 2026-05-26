@@ -1,7 +1,8 @@
-use crate::compositor::{Compositor, Window};
 use anyhow::{Context, Result};
 use std::cmp::Ordering;
 use std::process::{Command, Output};
+
+use crate::compositor::{Compositor, Window};
 
 // Hyprland uses a relative order for focus history rather than timestamps
 #[derive(Debug, Clone, serde::Deserialize)]

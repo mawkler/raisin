@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 use crate::compositor::Compositor;
 use crate::compositor::integrations::hyprland::HyprlandCompositor;
 use crate::compositor::integrations::niri::NiriCompositor;
@@ -32,12 +34,15 @@ impl std::str::FromStr for CompositorInstance {
     }
 }
 
-pub(crate) fn detect_compositor() -> Option<CompositorInstance> {
+pub(crate) fn detect_compositor() -> anyhow::Result<CompositorInstance> {
     if let Ok(compositor) = std::env::var("RAISIN_COMPOSITOR") {
-        return compositor.parse().ok();
+        return compositor.parse().context(format!(
+            "`$RAISIN_COMPOSITOR` is set to '{compositor}', which is not a supported compositor"
+        ));
     }
 
     CompositorInstance::all()
         .into_iter()
         .find(|instance| instance.is_running())
+        .context("could not find any supported compositor running")
 }
