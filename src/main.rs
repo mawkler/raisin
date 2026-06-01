@@ -15,14 +15,28 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
     let args = cli::Args::parse();
 
     let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
-    let sibling_windows = C::get_window_group(search_string)?;
+    let sibling_windows =
+        C::get_window_group(search_string).context("failed to get window group")?;
 
     if sibling_windows.is_empty() {
         C::launch_application(&args.app)?;
         return Ok(());
     }
 
-    let current_focused_window = C::get_focused_window().context("failed to get focused window")?;
+    let focused_window = C::get_focused_window().context("failed to get focused window")?;
+    let target_window = get_cycle_window_target::<C>(focused_window, &sibling_windows);
+
+    C::focus_window(target_window).context("failed to focus window")?;
+
+    Ok(())
+}
+
+/// Get the window to cycle to next based on `current_focused_window` and its siblings in
+/// `sibling_windows`
+fn get_cycle_window_target<C: Compositor>(
+    current_focused_window: Option<C::Win>,
+    sibling_windows: &[C::Win],
+) -> &C::Win {
     let current_window_position = current_focused_window.as_ref().and_then(|focused_window| {
         sibling_windows
             .iter()
@@ -36,9 +50,7 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
         None => 0,
     };
 
-    C::focus_window(&sibling_windows[target_index]).context("failed to focus window")?;
-
-    Ok(())
+    &sibling_windows[target_index]
 }
 
 impl CompositorInstance {
