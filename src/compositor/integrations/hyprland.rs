@@ -25,6 +25,7 @@ impl Ord for FocusOrder {
 pub struct HyprlandWindow {
     address: String,
     class: String,
+    #[serde(rename = "focusHistoryID")]
     focus_history_id: FocusOrder,
     title: String,
 }
