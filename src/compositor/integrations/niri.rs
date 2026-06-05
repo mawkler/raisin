@@ -14,27 +14,13 @@ pub struct NiriWindow {
     id: u32,
     app_id: String,
     focus_timestamp: Timestamp,
+    #[allow(dead_code)]
     title: String,
 }
 
-// `Eq` implemented manually to compare only the window ID
-impl PartialEq for NiriWindow {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for NiriWindow {}
-
 impl Window for NiriWindow {
-    type Timestamp = Timestamp;
-
     fn app_id(&self) -> &str {
         &self.app_id
-    }
-
-    fn last_focused(&self) -> &Self::Timestamp {
-        &self.focus_timestamp
     }
 
     fn title(&self) -> &str {
@@ -54,11 +40,6 @@ pub struct NiriCompositor;
 impl Compositor for NiriCompositor {
     type Win = NiriWindow;
 
-    fn is_running() -> bool {
-        std::env::var("NIRI_SOCKET").is_ok()
-            || Command::new("niri").arg("--version").output().is_ok()
-    }
-
     fn get_windows() -> Result<Vec<Self::Win>> {
         let windows_output = run_niri_command(&["msg", "--json", "windows"])?;
         if !windows_output.status.success() {
@@ -67,23 +48,10 @@ impl Compositor for NiriCompositor {
                 String::from_utf8_lossy(&windows_output.stderr)
             );
         }
-        let windows: Vec<NiriWindow> = serde_json::from_slice(&windows_output.stdout)
+        let mut windows: Vec<NiriWindow> = serde_json::from_slice(&windows_output.stdout)
             .context("failed to parse JSON output of window command")?;
+        windows.sort_by_key(|w| std::cmp::Reverse(w.focus_timestamp.clone()));
         Ok(windows)
-    }
-
-    fn get_focused_window() -> Result<Option<Self::Win>> {
-        let focused_window_json = run_niri_command(&["msg", "--json", "focused-window"])?;
-        if !focused_window_json.status.success() {
-            anyhow::bail!(
-                "niri msg --json focused-window failed: {}",
-                String::from_utf8_lossy(&focused_window_json.stderr)
-            );
-        }
-        let focused_window_json = String::from_utf8_lossy(&focused_window_json.stdout);
-        let focused_window: Option<NiriWindow> = serde_json::from_str(&focused_window_json)
-            .context("failed to parse focused window JSON")?;
-        Ok(focused_window)
     }
 
     fn focus_window(window: &Self::Win) -> Result<()> {

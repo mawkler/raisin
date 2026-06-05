@@ -1,12 +1,11 @@
 use anyhow::Context;
 use clap::Parser;
 use compositor::Compositor;
-use compositor::detection::CompositorInstance;
 
-use crate::compositor::{
-    detection::detect_compositor,
-    integrations::{hyprland::HyprlandCompositor, niri::NiriCompositor},
-};
+#[cfg(feature = "hyprland")]
+use crate::compositor::integrations::hyprland::HyprlandCompositor;
+#[cfg(feature = "niri")]
+use crate::compositor::integrations::niri::NiriCompositor;
 
 mod cli;
 mod compositor;
@@ -23,47 +22,23 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let focused_window = C::get_focused_window().context("failed to get focused window")?;
-    let target_window = get_cycle_window_target::<C>(focused_window, &sibling_windows);
+    // `get_windows` returns windows sorted most-recently-focused first.
+    // Pick the second-most-recent window, or the only one if alone.
+    let target_window = if sibling_windows.len() >= 2 {
+        &sibling_windows[1]
+    } else {
+        &sibling_windows[0]
+    };
 
     C::focus_window(target_window).context("failed to focus window")?;
 
     Ok(())
 }
 
-/// Get the window to cycle to next based on `current_focused_window` and its siblings in
-/// `sibling_windows`
-fn get_cycle_window_target<C: Compositor>(
-    current_focused_window: Option<C::Win>,
-    sibling_windows: &[C::Win],
-) -> &C::Win {
-    let current_window_position = current_focused_window.as_ref().and_then(|focused_window| {
-        sibling_windows
-            .iter()
-            .position(|sibling_window| sibling_window == focused_window)
-    });
-
-    let target_index = match current_window_position {
-        // Already on a matching window: cycle to next most recently focused
-        Some(position) => (position + 1) % sibling_windows.len(),
-        // Not on a matching window: pick most recent
-        None => 0,
-    };
-
-    &sibling_windows[target_index]
-}
-
-impl CompositorInstance {
-    fn run_raisin(&self) -> anyhow::Result<()> {
-        match self {
-            Self::Hyprland => run::<HyprlandCompositor>(),
-            Self::Niri => run::<NiriCompositor>(),
-        }
-    }
-}
-
 fn main() -> anyhow::Result<()> {
-    detect_compositor()
-        .context("failed to detect compositor type")?
-        .run_raisin()
+    #[cfg(feature = "hyprland")]
+    return run::<HyprlandCompositor>();
+
+    #[cfg(feature = "niri")]
+    return run::<NiriCompositor>();
 }

@@ -19,9 +19,22 @@
       let
         pkgs = import nixpkgs { inherit system; };
         naersk-lib = pkgs.callPackage naersk { };
+
+        mkRaisin = features: naersk-lib.buildPackage {
+          src = ./.;
+          cargoBuildOptions = x: x ++ [ "--no-default-features" "--features" features ];
+        };
+
+        packages = {
+          hyprland = mkRaisin "hyprland";
+          niri = mkRaisin "niri";
+        };
       in
       {
-        defaultPackage = naersk-lib.buildPackage { src = ./.; };
+        inherit packages;
+
+        defaultPackage = packages.hyprland;
+
         devShell =
           with pkgs;
           mkShell {
