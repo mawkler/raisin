@@ -5,9 +5,8 @@ version = "0.2.0"
 edition = "2024"
 
 [features]
-default = ["hyprland"]
-hyprland = []
-niri = []
+compositor-hyprland = []
+compositor-niri = []
 
 [dependencies]
 anyhow = "1.0.100"

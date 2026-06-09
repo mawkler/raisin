@@ -1,7 +1,12 @@
-fn main() {
-    const COMPOSITORS: &[&str] = &["hyprland", "niri"];
+const COMPOSITORS: &[&str] = &["hyprland", "niri"];
 
-    let enabled: Vec<&&str> = COMPOSITORS
+fn main() {
+    let compositors_features: Vec<_> = COMPOSITORS
+        .iter()
+        .map(|compositor| format!("compositor-{compositor}"))
+        .collect();
+
+    let enabled: Vec<_> = compositors_features
         .iter()
         .filter(|c| {
             let key = format!("CARGO_FEATURE_{}", c.to_uppercase().replace('-', "_"));
@@ -11,16 +16,19 @@ fn main() {
 
     match enabled.len() {
         0 => {
-            eprintln!("error: no compositor selected — enable one of {COMPOSITORS:?}");
+            let compositors = compositors_features.join(", ");
+            eprintln!(
+                "error: no compositor selected — enable one of the following features: {compositors}"
+            );
             std::process::exit(1);
         }
         1 => {}
-        n => {
+        _ => {
             eprintln!(
-                "error: {n} compositors selected ({enabled:?}) — features are mutually exclusive"
+                "error: more than one compositors selected — features prefixed by `compositor-` are mutually exclusive"
             );
             eprintln!(
-                "help: pass '--no-default-features --features <name>' to select a single compositor"
+                "help: pass '--no-default-features --features <compositor-name>' to select a single compositor"
             );
             std::process::exit(1);
         }

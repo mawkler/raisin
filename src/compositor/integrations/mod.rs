@@ -1,4 +1,4 @@
-#[cfg(feature = "hyprland")]
+#[cfg(feature = "compositor-hyprland")]
 pub(crate) mod hyprland;
-#[cfg(feature = "niri")]
+#[cfg(feature = "compositor-niri")]
 pub(crate) mod niri;

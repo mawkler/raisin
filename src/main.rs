@@ -2,9 +2,9 @@ use anyhow::Context;
 use clap::Parser;
 use compositor::Compositor;
 
-#[cfg(feature = "hyprland")]
+#[cfg(feature = "compositor-hyprland")]
 use crate::compositor::integrations::hyprland::HyprlandCompositor;
-#[cfg(feature = "niri")]
+#[cfg(feature = "compositor-niri")]
 use crate::compositor::integrations::niri::NiriCompositor;
 
 mod cli;
@@ -36,9 +36,9 @@ fn run<C: Compositor>() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    #[cfg(feature = "hyprland")]
+    #[cfg(feature = "compositor-hyprland")]
     return run::<HyprlandCompositor>();
 
-    #[cfg(feature = "niri")]
+    #[cfg(feature = "compositor-niri")]
     return run::<NiriCompositor>();
 }
