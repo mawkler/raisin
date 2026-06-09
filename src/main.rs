@@ -1,8 +1,6 @@
 use crate::application::Application;
 
-#[cfg(feature = "compositor-hyprland")]
 use crate::compositor::integrations::hyprland::HyprlandCompositor;
-#[cfg(feature = "compositor-niri")]
 use crate::compositor::integrations::niri::NiriCompositor;
 
 mod application;

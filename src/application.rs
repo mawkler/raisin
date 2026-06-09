@@ -27,7 +27,9 @@ impl<C: Compositor> Application<C> {
     }
 
     fn get_cycle_window_target(sibling_windows: &[C::Win]) -> &C::Win {
-        let idx = if sibling_windows.len() >= 2 { 1 } else { 0 };
-        &sibling_windows[idx]
+        assert!(!sibling_windows.is_empty());
+
+        let index = if sibling_windows.len() >= 2 { 1 } else { 0 };
+        &sibling_windows[index]
     }
 }
