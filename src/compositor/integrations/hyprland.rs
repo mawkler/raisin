@@ -1,20 +1,20 @@
-use anyhow::{Context, Result};
 use std::process::{Command, Output};
 
-use crate::compositor::{Compositor, Window};
+use anyhow::{Context, Result};
+
+use crate::compositor;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HyprlandWindow {
+pub struct Window {
     address: String,
     class: String,
     #[serde(rename = "focusHistoryID")]
     focus_history_id: u32,
-    #[allow(dead_code)]
     title: String,
 }
 
-impl Window for HyprlandWindow {
+impl compositor::Window for Window {
     fn app_id(&self) -> &str {
         &self.class
     }
@@ -31,10 +31,10 @@ fn run_hyprctl_command(args: &[&str]) -> Result<Output> {
         .with_context(|| format!("failed to run command 'hyprctl {}'", args.join(" ")))
 }
 
-pub struct HyprlandCompositor;
+pub struct Compositor;
 
-impl Compositor for HyprlandCompositor {
-    type Win = HyprlandWindow;
+impl compositor::Compositor for Compositor {
+    type Win = Window;
 
     fn get_windows() -> Result<Vec<Self::Win>> {
         let output = run_hyprctl_command(&["clients", "-j"])?;
@@ -45,7 +45,7 @@ impl Compositor for HyprlandCompositor {
             );
         }
 
-        let mut windows: Vec<HyprlandWindow> = serde_json::from_slice(&output.stdout)
+        let mut windows: Vec<Window> = serde_json::from_slice(&output.stdout)
             .context("failed to parse JSON output of clients command")?;
 
         windows.sort_by_key(|w| std::cmp::Reverse(w.focus_history_id));
@@ -72,5 +72,10 @@ impl Compositor for HyprlandCompositor {
         }
 
         Ok(())
+    }
+
+    fn is_running() -> bool {
+        std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+            || Command::new("hyprctl").arg("version").output().is_ok()
     }
 }

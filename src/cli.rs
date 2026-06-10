@@ -9,7 +9,7 @@
         \n  raisin ghostty com.mitchellh.ghostty \
         "
 )]
-/// Run or raise
+/// Run-or-raise for Hyprland and Niri
 pub(crate) struct Args {
     /// Command to run the application (e.g., `ghostty`).
     pub(crate) app: String,

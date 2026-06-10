@@ -1,7 +1,8 @@
-use anyhow::{Context, Result};
 use std::process::{Command, Output};
 
-use crate::compositor::{Compositor, Window};
+use anyhow::{Context, Result};
+
+use crate::compositor;
 
 #[derive(Debug, Clone, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Timestamp {
@@ -10,15 +11,14 @@ pub struct Timestamp {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct NiriWindow {
+pub struct Window {
     id: u32,
     app_id: String,
     focus_timestamp: Timestamp,
-    #[allow(dead_code)]
     title: String,
 }
 
-impl Window for NiriWindow {
+impl compositor::Window for Window {
     fn app_id(&self) -> &str {
         &self.app_id
     }
@@ -35,10 +35,10 @@ fn run_niri_command(args: &[&str]) -> Result<Output> {
         .with_context(|| format!("failed to run command 'niri {}'", args.join(" ")))
 }
 
-pub struct NiriCompositor;
+pub struct Compositor;
 
-impl Compositor for NiriCompositor {
-    type Win = NiriWindow;
+impl compositor::Compositor for Compositor {
+    type Win = Window;
 
     fn get_windows() -> Result<Vec<Self::Win>> {
         let windows_output = run_niri_command(&["msg", "--json", "windows"])?;
@@ -48,7 +48,7 @@ impl Compositor for NiriCompositor {
                 String::from_utf8_lossy(&windows_output.stderr)
             );
         }
-        let mut windows: Vec<NiriWindow> = serde_json::from_slice(&windows_output.stdout)
+        let mut windows: Vec<Window> = serde_json::from_slice(&windows_output.stdout)
             .context("failed to parse JSON output of window command")?;
         windows.sort_by_key(|w| std::cmp::Reverse(w.focus_timestamp.clone()));
         Ok(windows)
@@ -66,5 +66,10 @@ impl Compositor for NiriCompositor {
             eprintln!("warning: failed to focus window {id}: {stdout}{stderr}");
         }
         Ok(())
+    }
+
+    fn is_running() -> bool {
+        std::env::var("NIRI_SOCKET").is_ok()
+            || Command::new("niri").arg("--version").output().is_ok()
     }
 }

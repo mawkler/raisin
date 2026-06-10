@@ -4,11 +4,6 @@ description = "Run-or-raise for Niri and Hyprland"
 version = "0.2.0"
 edition = "2024"
 
-[features]
-default = ["compositor-hyprland"]
-compositor-hyprland = []
-compositor-niri = []
-
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.51", features = ["derive"] }

@@ -1,16 +1,14 @@
-use crate::application::Application;
+use anyhow::Context;
 
-use crate::compositor::integrations::hyprland::HyprlandCompositor;
-use crate::compositor::integrations::niri::NiriCompositor;
+use crate::application::Application;
 
 mod application;
 mod cli;
 mod compositor;
 
 fn main() -> anyhow::Result<()> {
-    #[cfg(feature = "compositor-hyprland")]
-    return Application::<HyprlandCompositor>::run();
-
-    #[cfg(feature = "compositor-niri")]
-    return Application::<NiriCompositor>::run();
+    match compositor::detect().context("no supported compositor detected")? {
+        compositor::Active::Hyprland => Application::<compositor::hyprland::Compositor>::run(),
+        compositor::Active::Niri => Application::<compositor::niri::Compositor>::run(),
+    }
 }

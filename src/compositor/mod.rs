@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use std::fmt::Debug;
 use std::process::Command;
 
+pub(crate) mod detection;
+pub(crate) use detection::{Active, detect};
 pub(crate) mod integrations;
+pub(crate) use integrations::{hyprland, niri};
 
 pub trait Window: Debug + Send + Sync {
     fn app_id(&self) -> &str;
@@ -17,6 +20,7 @@ pub trait Compositor {
     /// window is the most recently focused.
     fn get_windows() -> Result<Vec<Self::Win>>;
     fn focus_window(window: &Self::Win) -> Result<()>;
+    fn is_running() -> bool;
 
     /// Launch an application by its command name.
     fn launch_application(cmd: &str) -> Result<()> {
