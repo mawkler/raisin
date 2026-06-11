@@ -1,46 +1,34 @@
 use anyhow::Context;
+use enum_dispatch::enum_dispatch;
 
-use crate::compositor::{Compositor, hyprland, niri};
+use super::{Compositor, integrations};
 
-pub(crate) enum Active {
-    Hyprland,
-    Niri,
+#[enum_dispatch(Compositor)]
+pub(crate) enum ActiveCompositor {
+    Hyprland(integrations::hyprland::Compositor),
+    Niri(integrations::niri::Compositor),
 }
 
-impl Active {
-    pub(crate) fn is_active(&self) -> bool {
-        match self {
-            Self::Hyprland => hyprland::Compositor::is_running(),
-            Self::Niri => niri::Compositor::is_running(),
-        }
+const COMPOSITORS: [ActiveCompositor; 2] = [
+    ActiveCompositor::Hyprland(integrations::hyprland::Compositor),
+    ActiveCompositor::Niri(integrations::niri::Compositor),
+];
+
+pub(crate) fn detect() -> anyhow::Result<ActiveCompositor> {
+    if let Ok(env_compositor) = std::env::var("RAISIN_COMPOSITOR") {
+        return COMPOSITORS
+            .into_iter()
+            .find(|compositor| compositor.name() == env_compositor.to_lowercase())
+            .with_context(|| {
+                format!(
+                    "`$RAISIN_COMPOSITOR` is set to '{env_compositor}', \
+                     which is not a supported compositor"
+                )
+            });
     }
 
-    pub(crate) fn all() -> [Active; 2] {
-        [Self::Hyprland, Self::Niri]
-    }
-}
-
-impl std::str::FromStr for Active {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "hyprland" => Ok(Self::Hyprland),
-            "niri" => Ok(Self::Niri),
-            other => anyhow::bail!("unsupported compositor: '{other}'"),
-        }
-    }
-}
-
-pub(crate) fn detect() -> anyhow::Result<Active> {
-    if let Ok(compositor) = std::env::var("RAISIN_COMPOSITOR") {
-        return compositor.parse().context(format!(
-            "`$RAISIN_COMPOSITOR` is set to '{compositor}', which is not a supported compositor"
-        ));
-    }
-
-    Active::all()
+    COMPOSITORS
         .into_iter()
-        .find(Active::is_active)
+        .find(Compositor::is_running)
         .context("could not find any supported compositor running")
 }

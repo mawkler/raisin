@@ -2,7 +2,7 @@ use std::process::{Command, Output};
 
 use anyhow::{Context, Result};
 
-use crate::compositor;
+use crate::compositor::{self};
 
 #[derive(Debug, Clone, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Timestamp {
@@ -18,16 +18,6 @@ pub struct Window {
     title: String,
 }
 
-impl compositor::Window for Window {
-    fn app_id(&self) -> &str {
-        &self.app_id
-    }
-
-    fn title(&self) -> &str {
-        &self.title
-    }
-}
-
 fn run_niri_command(args: &[&str]) -> Result<Output> {
     Command::new("niri")
         .args(args)
@@ -38,9 +28,11 @@ fn run_niri_command(args: &[&str]) -> Result<Output> {
 pub struct Compositor;
 
 impl compositor::Compositor for Compositor {
-    type Win = Window;
+    fn name(&self) -> &'static str {
+        "niri"
+    }
 
-    fn get_windows() -> Result<Vec<Self::Win>> {
+    fn get_windows(&self) -> Result<Vec<compositor::Window>> {
         let windows_output = run_niri_command(&["msg", "--json", "windows"])?;
         if !windows_output.status.success() {
             anyhow::bail!(
@@ -51,13 +43,21 @@ impl compositor::Compositor for Compositor {
         let mut windows: Vec<Window> = serde_json::from_slice(&windows_output.stdout)
             .context("failed to parse JSON output of window command")?;
         windows.sort_by_key(|w| std::cmp::Reverse(w.focus_timestamp.clone()));
-        Ok(windows)
+
+        Ok(windows
+            .into_iter()
+            .map(|w| compositor::Window {
+                id: w.id.to_string(),
+                app_id: w.app_id,
+                title: w.title,
+            })
+            .collect())
     }
 
-    fn focus_window(window: &Self::Win) -> Result<()> {
-        let id = window.id.to_string();
+    fn focus_window(&self, window: &compositor::Window) -> Result<()> {
+        let id = &window.id;
         let output = Command::new("niri")
-            .args(["msg", "action", "focus-window", "--id", &id])
+            .args(["msg", "action", "focus-window", "--id", id])
             .output()
             .with_context(|| format!("failed to run niri focus-window for {id}"))?;
         if !output.status.success() {
@@ -68,7 +68,7 @@ impl compositor::Compositor for Compositor {
         Ok(())
     }
 
-    fn is_running() -> bool {
+    fn is_running(&self) -> bool {
         std::env::var("NIRI_SOCKET").is_ok()
             || Command::new("niri").arg("--version").output().is_ok()
     }

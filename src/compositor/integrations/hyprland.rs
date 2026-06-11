@@ -2,7 +2,7 @@ use std::process::{Command, Output};
 
 use anyhow::{Context, Result};
 
-use crate::compositor;
+use crate::compositor::{self};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,16 +12,6 @@ pub struct Window {
     #[serde(rename = "focusHistoryID")]
     focus_history_id: u32,
     title: String,
-}
-
-impl compositor::Window for Window {
-    fn app_id(&self) -> &str {
-        &self.class
-    }
-
-    fn title(&self) -> &str {
-        &self.title
-    }
 }
 
 fn run_hyprctl_command(args: &[&str]) -> Result<Output> {
@@ -34,9 +24,11 @@ fn run_hyprctl_command(args: &[&str]) -> Result<Output> {
 pub struct Compositor;
 
 impl compositor::Compositor for Compositor {
-    type Win = Window;
+    fn name(&self) -> &'static str {
+        "hyprland"
+    }
 
-    fn get_windows() -> Result<Vec<Self::Win>> {
+    fn get_windows(&self) -> Result<Vec<compositor::Window>> {
         let output = run_hyprctl_command(&["clients", "-j"])?;
         if !output.status.success() {
             anyhow::bail!(
@@ -49,11 +41,19 @@ impl compositor::Compositor for Compositor {
             .context("failed to parse JSON output of clients command")?;
 
         windows.sort_by_key(|w| std::cmp::Reverse(w.focus_history_id));
-        Ok(windows)
+
+        Ok(windows
+            .into_iter()
+            .map(|w| compositor::Window {
+                id: w.address,
+                app_id: w.class,
+                title: w.title,
+            })
+            .collect())
     }
 
-    fn focus_window(window: &Self::Win) -> Result<()> {
-        let address = &window.address;
+    fn focus_window(&self, window: &compositor::Window) -> Result<()> {
+        let address = &window.id;
         let focus = &format!("hl.dsp.focus({{ window = 'address:{address}' }})");
         let output = Command::new("hyprctl")
             .args(["dispatch", focus])
@@ -74,7 +74,7 @@ impl compositor::Compositor for Compositor {
         Ok(())
     }
 
-    fn is_running() -> bool {
+    fn is_running(&self) -> bool {
         std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
             || Command::new("hyprctl").arg("version").output().is_ok()
     }
