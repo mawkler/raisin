@@ -1,24 +1,27 @@
 use anyhow::{Context, Result};
-use clap::Parser;
 
 use crate::cli;
 use crate::compositor::{ActiveCompositor, Compositor, Window};
 
 pub(crate) struct Application {
+    cli_arguments: cli::Args,
     compositor: ActiveCompositor,
 }
 
 impl Application {
-    pub(crate) fn new(compositor: ActiveCompositor) -> Self {
-        Self { compositor }
+    pub(crate) fn new(cli_arguments: cli::Args, compositor: ActiveCompositor) -> Self {
+        Self {
+            cli_arguments,
+            compositor,
+        }
     }
 
     pub(crate) fn run(&self) -> anyhow::Result<()> {
-        let args = cli::Args::parse();
+        let args = &self.cli_arguments;
 
         let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
         let sibling_windows = self
-            .get_window_group(search_string)
+            .get_window_group(&search_string)
             .context("failed to get window group")?;
 
         if sibling_windows.is_empty() {
@@ -41,7 +44,7 @@ impl Application {
         &sibling_windows[index]
     }
 
-    fn get_window_group(&self, search_string: String) -> Result<Vec<Window>> {
+    fn get_window_group(&self, search_string: &str) -> Result<Vec<Window>> {
         let windows = self
             .compositor
             .get_windows()
@@ -49,7 +52,7 @@ impl Application {
 
         let target_app_id = windows
             .iter()
-            .find(|window| window.app_id.to_lowercase().contains(&search_string))
+            .find(|window| window.app_id.to_lowercase().contains(search_string))
             .map(|window| window.app_id.to_lowercase());
 
         let Some(target_app_id) = target_app_id else {
