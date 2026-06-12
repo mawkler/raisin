@@ -6,5 +6,5 @@ mod compositor;
 
 fn main() -> anyhow::Result<()> {
     let compositor = compositor::detect()?;
-    Application::run(compositor)
+    Application::new(compositor).run()
 }

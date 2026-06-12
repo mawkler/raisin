@@ -27,22 +27,4 @@ pub trait Compositor {
             .with_context(|| format!("failed to launch application '{cmd}'"))?;
         Ok(())
     }
-
-    fn get_window_group(&self, search_string: String) -> Result<Vec<Window>> {
-        let windows = self.get_windows().context("failed to get windows")?;
-
-        let target_app_id = windows
-            .iter()
-            .find(|window| window.app_id.to_lowercase().contains(&search_string))
-            .map(|window| window.app_id.to_lowercase());
-
-        let Some(target_app_id) = target_app_id else {
-            return Ok(vec![]);
-        };
-
-        Ok(windows
-            .into_iter()
-            .filter(|window| window.app_id.to_lowercase() == target_app_id)
-            .collect())
-    }
 }
