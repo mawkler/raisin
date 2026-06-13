@@ -52,8 +52,8 @@ impl Application {
 
         let target_app_id = windows
             .iter()
-            .find(|window| window.app_id.to_lowercase().contains(search_string))
-            .map(|window| window.app_id.to_lowercase());
+            .map(|window| window.app_id.to_lowercase())
+            .find(|app_id| app_id.contains(search_string));
 
         let Some(target_app_id) = target_app_id else {
             return Ok(vec![]);

@@ -40,18 +40,20 @@ impl compositor::Compositor for Compositor {
                 String::from_utf8_lossy(&windows_output.stderr)
             );
         }
-        let mut windows: Vec<Window> = serde_json::from_slice(&windows_output.stdout)
+        let mut niri_windows: Vec<Window> = serde_json::from_slice(&windows_output.stdout)
             .context("failed to parse JSON output of window command")?;
-        windows.sort_by_key(|w| std::cmp::Reverse(w.focus_timestamp.clone()));
+        niri_windows.sort_by_key(|w| std::cmp::Reverse(w.focus_timestamp.clone()));
 
-        Ok(windows
+        let windows = niri_windows
             .into_iter()
-            .map(|w| compositor::Window {
-                id: w.id.to_string(),
-                app_id: w.app_id,
-                title: w.title,
+            .map(|window| compositor::Window {
+                id: window.id.to_string(),
+                app_id: window.app_id,
+                title: window.title,
             })
-            .collect())
+            .collect();
+
+        Ok(windows)
     }
 
     fn focus_window(&self, window: &compositor::Window) -> Result<()> {
