@@ -4,6 +4,7 @@ use clap::Parser;
 mod application;
 mod cli;
 mod compositor;
+mod gui;
 
 fn main() -> anyhow::Result<()> {
     let args = cli::Args::parse();

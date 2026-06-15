@@ -20,6 +20,11 @@ impl Application {
         let args = &self.cli_arguments;
 
         let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
+
+        if args.gui {
+            return self.run_gui(&search_string);
+        }
+
         let sibling_windows = self
             .get_window_group(&search_string)
             .context("failed to get window group")?;
@@ -43,6 +48,24 @@ impl Application {
         Ok(())
     }
 
+    fn run_gui(&self, search_string: &str) -> Result<()> {
+        crate::gui::run(
+            search_string,
+            self.cli_arguments.trigger_key.as_deref(),
+            &self.compositor,
+        )
+    }
+
+    fn get_cycle_window_target<'a>(
+        focused_window: Option<&'a Window>,
+        sibling_windows: &'a [Window],
+    ) -> &'a Window {
+        assert!(!sibling_windows.is_empty());
+
+        let target_index = Self::get_cycle_window_target_index(focused_window, sibling_windows);
+        &sibling_windows[target_index]
+    }
+
     fn get_cycle_window_target_index(
         focused_window: Option<&Window>,
         sibling_windows: &[Window],
@@ -64,16 +87,6 @@ impl Application {
         };
 
         (window_position + 1) % sibling_windows.len()
-    }
-
-    fn get_cycle_window_target<'a>(
-        focused_window: Option<&'a Window>,
-        sibling_windows: &'a [Window],
-    ) -> &'a Window {
-        assert!(!sibling_windows.is_empty());
-
-        let target_index = Self::get_cycle_window_target_index(focused_window, sibling_windows);
-        &sibling_windows[target_index]
     }
 
     fn search_for_app_id(search_string: &str, windows: &[Window]) -> Option<String> {
