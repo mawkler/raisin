@@ -5,7 +5,6 @@
     naersk.url = "github:nix-community/naersk/master";
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     utils.url = "github:numtide/flake-utils";
-    fenix.url = "github:nix-community/fenix";
   };
 
   outputs =
@@ -13,18 +12,13 @@
       nixpkgs,
       utils,
       naersk,
-      fenix,
       ...
     }:
     utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        toolchain = fenix.packages.${system}.latest.toolchain;
-        naersk-lib = pkgs.callPackage naersk {
-          cargo = toolchain;
-          rustc = toolchain;
-        };
+        naersk-lib = pkgs.callPackage naersk { };
 
       in
       {
@@ -42,7 +36,8 @@
           mkShell {
             nativeBuildInputs = [ pkg-config ];
             buildInputs = [
-              toolchain
+              cargo
+              rustc
               pre-commit
               gtk4
               gtk4-layer-shell
