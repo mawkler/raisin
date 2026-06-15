@@ -110,9 +110,8 @@ pub(crate) fn run(
         return Ok(());
     };
 
-    let current_is_in_group = focused_app_id
-        .as_deref()
-        == Some(&groups[group_idx].app_id.to_lowercase());
+    let current_is_in_group =
+        focused_app_id.as_deref() == Some(&groups[group_idx].app_id.to_lowercase());
 
     let initial_window_idx = if current_is_in_group && groups[group_idx].windows.len() >= 2 {
         1
@@ -182,8 +181,7 @@ pub(crate) fn run(
         };
 
         let footer_label = {
-            let label =
-                gtk4::Label::new(Some("Release Super to switch \u{00b7} Esc to cancel"));
+            let label = gtk4::Label::new(Some("Release Super to switch \u{00b7} Esc to cancel"));
             label.add_css_class("footer");
             label
         };
@@ -232,8 +230,7 @@ pub(crate) fn run(
         controller.connect_key_released(move |_ctrl, keyval, _keycode, _state| {
             if is_super_key(keyval) {
                 let state = state.borrow();
-                if let Some(window) = state.groups[state.group_idx].windows.get(state.window_idx)
-                {
+                if let Some(window) = state.groups[state.group_idx].windows.get(state.window_idx) {
                     *selected.borrow_mut() = Some(window.clone());
                 }
                 app.quit();
@@ -244,7 +241,8 @@ pub(crate) fn run(
         window.present();
     });
 
-    app.run();
+    // Use this instead of `.run()`, which picks up CLI arguments passed to raisin
+    app.run_with_args(&[] as &[&str]);
 
     if let Some(window) = selected_window.borrow().as_ref() {
         compositor.focus_window(window)?;
