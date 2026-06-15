@@ -49,11 +49,8 @@ impl Application {
     }
 
     fn run_gui(&self, search_string: &str) -> Result<()> {
-        crate::gui::run(
-            search_string,
-            self.cli_arguments.trigger_key.as_deref(),
-            &self.compositor,
-        )
+        let trigger_key = self.cli_arguments.trigger_key.as_deref();
+        crate::gui::run(search_string, trigger_key, &self.compositor)
     }
 
     fn get_cycle_window_target<'a>(
