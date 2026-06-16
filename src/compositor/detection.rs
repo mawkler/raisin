@@ -3,6 +3,7 @@ use enum_dispatch::enum_dispatch;
 
 use super::{Compositor, integrations};
 
+/// A `Compositor` wrapper with all its implementation variants
 #[enum_dispatch(Compositor)]
 pub(crate) enum ActiveCompositor {
     Hyprland(integrations::hyprland::Compositor),

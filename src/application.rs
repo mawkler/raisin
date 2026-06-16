@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 
-use crate::cli;
 use crate::compositor::{ActiveCompositor, Compositor, Window};
+use crate::{cli, gui};
 
 pub(crate) struct Application {
     cli_arguments: cli::Args,
@@ -22,7 +22,8 @@ impl Application {
         let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
 
         if args.gui {
-            return self.run_gui(&search_string);
+            let trigger_key = self.cli_arguments.trigger_key.as_deref();
+            return gui::run(&search_string, trigger_key, &self.compositor);
         }
 
         let sibling_windows = self
@@ -46,11 +47,6 @@ impl Application {
             .context("failed to focus window")?;
 
         Ok(())
-    }
-
-    fn run_gui(&self, search_string: &str) -> Result<()> {
-        let trigger_key = self.cli_arguments.trigger_key.as_deref();
-        crate::gui::run(search_string, trigger_key, &self.compositor)
     }
 
     fn get_cycle_window_target<'a>(

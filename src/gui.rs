@@ -25,7 +25,7 @@ fn build_groups(windows: Vec<Window>) -> Vec<WindowGroup> {
         let app_id = window.app_id.clone();
         if let Some(group) = groups
             .iter_mut()
-            .find(|g: &&mut WindowGroup| g.app_id.eq_ignore_ascii_case(&app_id))
+            .find(|group| group.app_id.eq_ignore_ascii_case(&app_id))
         {
             group.windows.push(window);
         } else {
@@ -223,20 +223,20 @@ pub(crate) fn run(
             return gtk4::glib::Propagation::Stop;
         }
 
-        if let Some(trigger_char) = trigger_char {
-            if matches_trigger_key(keyval, trigger_char) {
-                let mut state = state_for_keys.borrow_mut();
-                let group = &state.groups[state.group_idx];
-                if group.windows.len() >= 2 {
-                    state.window_idx = (state.window_idx + 1) % group.windows.len();
-                    let flat_idx = flat_row_index(&state) as i32;
-                    if let Some(row) = list_box_for_keys.row_at_index(flat_idx) {
-                        list_box_for_keys.select_row(Some(&row));
-                        row.grab_focus();
-                    }
+        if let Some(trigger_char) = trigger_char
+            && matches_trigger_key(keyval, trigger_char)
+        {
+            let mut state = state_for_keys.borrow_mut();
+            let group = &state.groups[state.group_idx];
+            if group.windows.len() >= 2 {
+                state.window_idx = (state.window_idx + 1) % group.windows.len();
+                let flat_idx = flat_row_index(&state) as i32;
+                if let Some(row) = list_box_for_keys.row_at_index(flat_idx) {
+                    list_box_for_keys.select_row(Some(&row));
+                    row.grab_focus();
                 }
-                return gtk4::glib::Propagation::Stop;
             }
+            return gtk4::glib::Propagation::Stop;
         }
 
         gtk4::glib::Propagation::Proceed

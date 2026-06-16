@@ -37,6 +37,7 @@
             nativeBuildInputs = [ pkg-config ];
             buildInputs = [
               cargo
+              clippy
               rustc
               pre-commit
               gtk4
