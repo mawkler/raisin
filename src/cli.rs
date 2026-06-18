@@ -27,5 +27,5 @@ pub(crate) struct Args {
 
     /// Key used to trigger this invocation (for cycling windows in GUI mode).
     #[arg(long)]
-    pub(crate) trigger_key: Option<String>,
+    pub(crate) trigger_key: Option<char>,
 }

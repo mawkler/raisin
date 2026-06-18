@@ -22,7 +22,7 @@ impl Application {
         let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
 
         if args.gui {
-            let trigger_key = self.cli_arguments.trigger_key.as_deref();
+            let trigger_key = self.cli_arguments.trigger_key;
             return gui::run(&search_string, trigger_key, &self.compositor);
         }
 
