@@ -51,6 +51,14 @@ impl Application {
             return 0;
         };
 
+        let focused_app_id = focused_window.app_id.to_lowercase();
+        let target_app_id = sibling_windows[0].app_id.to_lowercase();
+
+        // Switching from one application to another
+        if focused_app_id != target_app_id {
+            return 0;
+        }
+
         let Some(window_position) = sibling_windows.iter().position(|w| w == focused_window) else {
             return 0;
         };
@@ -68,18 +76,31 @@ impl Application {
         &sibling_windows[target_index]
     }
 
+    fn search_for_app_id(search_string: &str, windows: &[Window]) -> Option<String> {
+        // Exact match
+        let target_app_id = windows
+            .iter()
+            .map(|window| window.app_id.to_lowercase())
+            .find(|app_id| app_id == search_string);
+
+        if target_app_id.is_some() {
+            return target_app_id;
+        }
+
+        // Substring match
+        windows
+            .iter()
+            .map(|window| window.app_id.to_lowercase())
+            .find(|app_id| app_id.contains(search_string))
+    }
+
     fn get_window_group(&self, search_string: &str) -> Result<Vec<Window>> {
         let windows = self
             .compositor
             .get_windows()
             .context("failed to get windows")?;
 
-        let target_app_id = windows
-            .iter()
-            .map(|window| window.app_id.to_lowercase())
-            .find(|app_id| app_id.contains(search_string));
-
-        let Some(target_app_id) = target_app_id else {
+        let Some(target_app_id) = Self::search_for_app_id(search_string, &windows) else {
             return Ok(vec![]);
         };
 
