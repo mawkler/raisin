@@ -63,7 +63,7 @@ impl compositor::Compositor for Compositor {
         let mut hyprland_windows: Vec<Window> = serde_json::from_slice(&output.stdout)
             .context("failed to parse JSON output of clients command")?;
 
-        hyprland_windows.sort_by_key(|w| std::cmp::Reverse(w.focus_history_id));
+        hyprland_windows.sort_by_key(|w| w.focus_history_id);
 
         Ok(hyprland_windows
             .into_iter()
