@@ -29,7 +29,13 @@ impl Application {
             return Ok(());
         }
 
-        let target_window = Self::get_cycle_window_target(&sibling_windows);
+        let focused_window = self
+            .compositor
+            .get_focused_window()
+            .context("failed to get focused window")?;
+
+        let target_window =
+            Self::get_cycle_window_target(focused_window.as_ref(), &sibling_windows);
         self.compositor
             .focus_window(target_window)
             .context("failed to focus window")?;
@@ -37,11 +43,29 @@ impl Application {
         Ok(())
     }
 
-    fn get_cycle_window_target(sibling_windows: &[Window]) -> &Window {
+    fn get_cycle_window_target_index(
+        focused_window: Option<&Window>,
+        sibling_windows: &[Window],
+    ) -> usize {
+        let Some(focused_window) = focused_window else {
+            return 0;
+        };
+
+        let Some(window_position) = sibling_windows.iter().position(|w| w == focused_window) else {
+            return 0;
+        };
+
+        (window_position + 1) % sibling_windows.len()
+    }
+
+    fn get_cycle_window_target<'a>(
+        focused_window: Option<&'a Window>,
+        sibling_windows: &'a [Window],
+    ) -> &'a Window {
         assert!(!sibling_windows.is_empty());
 
-        let index = if sibling_windows.len() >= 2 { 1 } else { 0 };
-        &sibling_windows[index]
+        let target_index = Self::get_cycle_window_target_index(focused_window, sibling_windows);
+        &sibling_windows[target_index]
     }
 
     fn get_window_group(&self, search_string: &str) -> Result<Vec<Window>> {

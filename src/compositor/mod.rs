@@ -14,10 +14,17 @@ pub(crate) struct Window {
     pub title: String,
 }
 
+impl PartialEq for Window {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
 #[enum_dispatch]
 pub trait Compositor {
     fn name(&self) -> &'static str;
     fn get_windows(&self) -> Result<Vec<Window>>;
+    fn get_focused_window(&self) -> Result<Option<Window>>;
     fn focus_window(&self, window: &Window) -> Result<()>;
     fn is_running(&self) -> bool;
 

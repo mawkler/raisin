@@ -32,6 +32,24 @@ impl compositor::Compositor for Compositor {
         "niri"
     }
 
+    fn get_focused_window(&self) -> Result<Option<compositor::Window>> {
+        let focused_window_json = run_niri_command(&["msg", "--json", "focused-window"])?;
+        if !focused_window_json.status.success() {
+            let err = String::from_utf8_lossy(&focused_window_json.stderr);
+            anyhow::bail!("niri msg --json focused-window failed: {err}");
+        }
+
+        let focused_window_json = String::from_utf8_lossy(&focused_window_json.stdout);
+        let focused_window: Option<Window> = serde_json::from_str(&focused_window_json)
+            .context("failed to parse focused window JSON")?;
+
+        Ok(focused_window.map(|window| compositor::Window {
+            id: window.id.to_string(),
+            app_id: window.app_id,
+            title: window.title,
+        }))
+    }
+
     fn get_windows(&self) -> Result<Vec<compositor::Window>> {
         let windows_output = run_niri_command(&["msg", "--json", "windows"])?;
         if !windows_output.status.success() {

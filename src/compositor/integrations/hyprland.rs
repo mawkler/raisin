@@ -28,6 +28,29 @@ impl compositor::Compositor for Compositor {
         "hyprland"
     }
 
+    fn get_focused_window(&self) -> Result<Option<compositor::Window>> {
+        let output = run_hyprctl_command(&["activewindow", "-j"])?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("hyprctl activewindow -j failed: {err}");
+        }
+        let focused_window_json = String::from_utf8_lossy(&output.stdout);
+        let focused_window_json = focused_window_json.trim();
+
+        if focused_window_json.is_empty() || focused_window_json == "{}" {
+            return Ok(None);
+        }
+
+        let window: Window = serde_json::from_str(focused_window_json)
+            .context("failed to parse active window's JSON")?;
+
+        Ok(Some(compositor::Window {
+            id: window.address,
+            app_id: window.class,
+            title: window.title,
+        }))
+    }
+
     fn get_windows(&self) -> Result<Vec<compositor::Window>> {
         let output = run_hyprctl_command(&["clients", "-j"])?;
         if !output.status.success() {
