@@ -23,11 +23,16 @@ impl PartialEq for Window {
 #[enum_dispatch]
 pub trait Compositor {
     fn name(&self) -> &'static str;
+    /// Gets all windows sorted from most to least recently focused.
     fn get_windows(&self) -> Result<Vec<Window>>;
+    /// Gets the currently focused window, if any, otherwise `None`
     fn get_focused_window(&self) -> Result<Option<Window>>;
+    /// Switches to `window`
     fn focus_window(&self, window: &Window) -> Result<()>;
+    /// Returns `true` if `Self` is currently active
     fn is_running(&self) -> bool;
 
+    /// Runs the command `cmd`
     fn launch_application(&self, cmd: &str) -> Result<()> {
         let _ = Command::new(cmd)
             .spawn()
