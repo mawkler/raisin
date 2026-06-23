@@ -5,6 +5,8 @@ mod application;
 mod cli;
 mod compositor;
 mod gui;
+mod input;
+mod state;
 
 fn main() -> anyhow::Result<()> {
     let args = cli::Args::parse();
