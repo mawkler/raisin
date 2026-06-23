@@ -51,6 +51,7 @@ pub(crate) fn initial_window_idx(
     focused_app_id: Option<&str>,
 ) -> usize {
     let is_in_group = focused_app_id == Some(&app_id.to_lowercase());
+    #[allow(clippy::bool_to_int_with_if)]
     if is_in_group && windows.len() >= 2 {
         1
     } else {

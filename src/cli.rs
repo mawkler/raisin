@@ -15,7 +15,7 @@ pub(crate) struct Args {
     /// Command to run the application (e.g., `ghostty`).
     pub(crate) app: String,
 
-    /// Window app_id to match (e.g., `com.mitchellh.ghostty`). Optional.
+    /// Window app ID to match (e.g., `com.mitchellh.ghostty`). Optional.
     ///
     /// If omitted, the app name is used as a substring to match against
     /// window class names.

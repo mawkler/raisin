@@ -141,7 +141,7 @@ fn run_event_loop(
     window: &gtk4::Window,
     list_box: &gtk4::ListBox,
     state: Rc<RefCell<Picker>>,
-    selected_window: Rc<RefCell<Option<Window>>>,
+    selected_window: &Rc<RefCell<Option<Window>>>,
     trigger_char: Option<char>,
 ) {
     let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
@@ -210,9 +210,9 @@ pub(crate) fn run(
         return Ok(());
     };
 
-    let current_group_name = current_group_name.to_string();
+    let current_group_name = current_group_name.clone();
 
-    let window_idx = state::initial_window_idx(
+    let current_window_idx = state::initial_window_idx(
         &groups[&current_group_name],
         &current_group_name,
         focused_app_id.as_deref(),
@@ -221,7 +221,7 @@ pub(crate) fn run(
     let state = Rc::new(RefCell::new(Picker {
         groups,
         current_group_name,
-        current_window_idx: window_idx,
+        current_window_idx,
     }));
 
     let selected_window: Rc<RefCell<Option<Window>>> = Rc::new(RefCell::new(None));
@@ -237,13 +237,7 @@ pub(crate) fn run(
 
     build_layout(&window, &list_box, &header_label, &footer_label);
 
-    run_event_loop(
-        &window,
-        &list_box,
-        state,
-        selected_window.clone(),
-        trigger_key,
-    );
+    run_event_loop(&window, &list_box, state, &selected_window, trigger_key);
 
     if let Some(window) = selected_window.borrow().as_ref() {
         compositor.focus_window(window)?;
