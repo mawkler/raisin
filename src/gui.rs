@@ -205,10 +205,12 @@ pub(crate) fn run(
 
     let groups = state::build_groups(all_windows);
 
-    let Some(current_group_name) = state::find_group(&groups, search_string) else {
+    let Some(current_group_name) = state::group_name_search(&groups, search_string) else {
         compositor.launch_application(search_string)?;
         return Ok(());
     };
+
+    let current_group_name = current_group_name.to_string();
 
     let window_idx = state::initial_window_idx(
         &groups[&current_group_name],

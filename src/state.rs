@@ -32,9 +32,17 @@ pub(crate) fn build_groups(windows: Vec<Window>) -> Groups {
     })
 }
 
-pub(crate) fn find_group(groups: &Groups, search_string: &str) -> Option<String> {
+pub(crate) fn group_name_search<'a>(groups: &'a Groups, search_string: &str) -> Option<&'a String> {
     let search = search_string.to_lowercase();
-    groups.keys().find(|k| k.contains(&search)).cloned()
+
+    // Exact match
+    let group_name = groups.keys().find(|&name| name == &search);
+    if group_name.is_some() {
+        return group_name;
+    }
+
+    // Substring match
+    groups.keys().find(|name| name.contains(&search))
 }
 
 pub(crate) fn initial_window_idx(
