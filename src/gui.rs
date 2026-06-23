@@ -10,16 +10,18 @@ use crate::compositor::{ActiveCompositor, Compositor, Window};
 use crate::input;
 use crate::state::{self, Picker};
 
-fn flat_row_index(state: &Picker) -> usize {
+fn flat_row_index(state: &Picker) -> i32 {
     let mut flat = 0;
+
     for key in state.groups.keys() {
         if key == &state.current_group_name {
             break;
         }
         flat += 1 + state.groups[key].len();
     }
-    flat += 1 + state.window_idx;
-    flat
+    flat += 1 + state.current_window_idx;
+
+    i32::try_from(flat).expect("row index exceeds i32 range")
 }
 
 fn populate_list_box(state: &Picker, list_box: &gtk4::ListBox) {
@@ -56,7 +58,7 @@ fn create_list_box(state: &Picker) -> gtk4::ListBox {
 
     populate_list_box(state, &list_box);
 
-    let idx = flat_row_index(state) as i32;
+    let idx = flat_row_index(state);
     if let Some(row) = list_box.row_at_index(idx) {
         list_box.select_row(Some(&row));
         row.grab_focus();
@@ -160,7 +162,7 @@ fn run_event_loop(
         {
             let mut state = state_for_keys.borrow_mut();
             state.advance_window();
-            let flat_idx = flat_row_index(&state) as i32;
+            let flat_idx = flat_row_index(&state);
             if let Some(row) = list_box_for_keys.row_at_index(flat_idx) {
                 list_box_for_keys.select_row(Some(&row));
                 row.grab_focus();
@@ -177,11 +179,9 @@ fn run_event_loop(
     controller.connect_key_released(move |_ctrl, keyval, _keycode, _state| {
         if input::is_super_key(keyval) {
             let state = state.borrow();
-            let Some(window) = state.current_group_windows().get(state.window_idx) else {
-                eprintln!(
-                    "could not find any window with index {} in current group",
-                    state.window_idx
-                );
+            let window_idx = state.current_window_idx;
+            let Some(window) = state.current_group_windows().get(window_idx) else {
+                eprintln!("could not find any window with index {window_idx} in current group");
                 return;
             };
             *selected_for_release.borrow_mut() = Some(window.clone());
@@ -219,7 +219,7 @@ pub(crate) fn run(
     let state = Rc::new(RefCell::new(Picker {
         groups,
         current_group_name,
-        window_idx,
+        current_window_idx: window_idx,
     }));
 
     let selected_window: Rc<RefCell<Option<Window>>> = Rc::new(RefCell::new(None));

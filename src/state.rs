@@ -7,7 +7,7 @@ pub(crate) type Groups = BTreeMap<String, Vec<Window>>;
 pub(crate) struct Picker {
     pub(crate) groups: Groups,
     pub(crate) current_group_name: String,
-    pub(crate) window_idx: usize,
+    pub(crate) current_window_idx: usize,
 }
 
 impl Picker {
@@ -18,7 +18,7 @@ impl Picker {
     pub(crate) fn advance_window(&mut self) {
         let windows = self.current_group_windows();
         if windows.len() >= 2 {
-            self.window_idx = (self.window_idx + 1) % windows.len();
+            self.current_window_idx = (self.current_window_idx + 1) % windows.len();
         }
     }
 }
