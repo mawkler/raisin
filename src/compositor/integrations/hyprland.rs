@@ -86,12 +86,12 @@ impl compositor::Compositor for Compositor {
         let stdout = String::from_utf8_lossy(&output.stdout);
 
         if stdout.starts_with("warning:") {
-            eprintln!("got warning when focusing window {address}: {stdout}");
+            log::warn!("got warning when focusing window {address}: {stdout}");
         }
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("failed to focus window {address}: {stdout}{stderr}");
+            log::error!("failed to focus window {address}: {stdout}{stderr}");
         }
 
         Ok(())

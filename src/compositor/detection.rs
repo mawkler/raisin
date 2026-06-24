@@ -15,21 +15,29 @@ const COMPOSITORS: [ActiveCompositor; 2] = [
     ActiveCompositor::Niri(integrations::niri::Compositor),
 ];
 
+const COMPOSITOR_ENV_VAR: &str = "RAISIN_COMPOSITOR";
+
 pub(crate) fn detect() -> anyhow::Result<ActiveCompositor> {
-    if let Ok(env_compositor) = std::env::var("RAISIN_COMPOSITOR") {
-        return COMPOSITORS
+    if let Ok(env_compositor) = std::env::var(COMPOSITOR_ENV_VAR) {
+        let compositor = COMPOSITORS
             .into_iter()
             .find(|compositor| compositor.name() == env_compositor.to_lowercase())
             .with_context(|| {
                 format!(
-                    "`$RAISIN_COMPOSITOR` is set to '{env_compositor}', \
+                    "`{COMPOSITOR_ENV_VAR}` is set to '{env_compositor}', \
                      which is not a supported compositor"
                 )
             });
+
+        log::info!("`{COMPOSITOR_ENV_VAR}` is set to {env_compositor}, using that as compositor");
+        return compositor;
     }
 
-    COMPOSITORS
+    let compositor = COMPOSITORS
         .into_iter()
         .find(Compositor::is_running)
-        .context("could not find any supported compositor running")
+        .context("could not find any supported compositor running")?;
+
+    log::info!("detected compositor: {name}", name = compositor.name());
+    Ok(compositor)
 }

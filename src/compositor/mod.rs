@@ -34,6 +34,7 @@ pub trait Compositor {
 
     /// Runs the command `cmd`
     fn launch_application(&self, cmd: &str) -> Result<()> {
+        log::info!("launching application: {cmd}");
         let _ = Command::new(cmd)
             .spawn()
             .with_context(|| format!("failed to launch application '{cmd}'"))?;

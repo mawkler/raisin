@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(clap::Parser, Debug)]
 #[command(
     author,
@@ -28,4 +30,8 @@ pub(crate) struct Args {
     /// Key used to trigger this invocation (for cycling windows in GUI mode).
     #[arg(long)]
     pub(crate) trigger_key: Option<char>,
+
+    /// Path to write logs to (in addition to stderr).
+    #[arg(long)]
+    pub(crate) log_file: Option<PathBuf>,
 }

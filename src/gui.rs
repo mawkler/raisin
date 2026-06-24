@@ -181,7 +181,7 @@ fn run_event_loop(
             let state = state.borrow();
             let window_idx = state.current_window_idx;
             let Some(window) = state.current_group_windows().get(window_idx) else {
-                eprintln!("could not find any window with index {window_idx} in current group");
+                log::error!("could not find any window with index {window_idx} in current group");
                 return;
             };
             *selected_for_release.borrow_mut() = Some(window.clone());

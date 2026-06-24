@@ -83,7 +83,7 @@ impl compositor::Compositor for Compositor {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            eprintln!("warning: failed to focus window {id}: {stdout}{stderr}");
+            log::warn!("failed to focus window {id}: {stdout}{stderr}");
         }
         Ok(())
     }
