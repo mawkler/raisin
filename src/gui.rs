@@ -140,7 +140,7 @@ fn build_layout(
 fn run_event_loop(
     window: &gtk4::Window,
     list_box: &gtk4::ListBox,
-    state: Rc<RefCell<Picker>>,
+    picker_state: &Rc<RefCell<Picker>>,
     selected_window: &Rc<RefCell<Option<Window>>>,
     trigger_char: Option<char>,
 ) {
@@ -148,7 +148,7 @@ fn run_event_loop(
     let controller = gtk4::EventControllerKey::new();
 
     let list_box_for_keys = list_box.clone();
-    let state_for_keys = state.clone();
+    let state_for_keys = picker_state.clone();
     let loop_for_esc = main_loop.clone();
 
     controller.connect_key_pressed(move |_, key, _, _| {
@@ -173,12 +173,13 @@ fn run_event_loop(
         gtk4::glib::Propagation::Proceed
     });
 
+    let state_for_release = picker_state.clone();
     let selected_for_release = selected_window.clone();
     let loop_for_super = main_loop.clone();
 
-    controller.connect_key_released(move |_ctrl, keyval, _keycode, _state| {
-        if input::is_super_key(keyval) {
-            let state = state.borrow();
+    controller.connect_key_released(move |_, key, _, _| {
+        if input::is_super_key(key) {
+            let state = state_for_release.borrow();
             let window_idx = state.current_window_idx;
             let Some(window) = state.current_group_windows().get(window_idx) else {
                 log::error!("could not find any window with index {window_idx} in current group");
@@ -218,7 +219,7 @@ pub(crate) fn run(
         focused_app_id.as_deref(),
     );
 
-    let state = Rc::new(RefCell::new(Picker {
+    let picker_state = Rc::new(RefCell::new(Picker {
         groups,
         current_group_name,
         current_window_idx,
@@ -231,13 +232,19 @@ pub(crate) fn run(
     let window = create_overlay_window();
     load_css().context("failed to load CSS")?;
 
-    let list_box = create_list_box(&state.borrow());
-    let header_label = create_header_label(&state.borrow().current_group_name);
+    let list_box = create_list_box(&picker_state.borrow());
+    let header_label = create_header_label(&picker_state.borrow().current_group_name);
     let footer_label = create_footer_label();
 
     build_layout(&window, &list_box, &header_label, &footer_label);
 
-    run_event_loop(&window, &list_box, state, &selected_window, trigger_key);
+    run_event_loop(
+        &window,
+        &list_box,
+        &picker_state,
+        &selected_window,
+        trigger_key,
+    );
 
     if let Some(window) = selected_window.borrow().as_ref() {
         compositor.focus_window(window)?;
