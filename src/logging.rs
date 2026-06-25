@@ -1,10 +1,20 @@
 use anyhow::Context;
+use log::LevelFilter;
+
+const DEFAULT_LEVEL: LevelFilter = LevelFilter::Info;
 
 pub(crate) fn init(log_file: Option<&std::path::Path>) -> anyhow::Result<()> {
-    let level = std::env::var("RUST_LOG")
-        .unwrap_or("info".into())
-        .parse::<log::LevelFilter>()
-        .unwrap_or(log::LevelFilter::Info);
+    let level = match std::env::var("RUST_LOG") {
+        Ok(level) => level
+            .parse()
+            .inspect_err(|_| {
+                eprintln!(
+                    "$RUST_LOG is set to an invalid level '{level}', defaulting to {DEFAULT_LEVEL}"
+                )
+            })
+            .unwrap_or(DEFAULT_LEVEL),
+        Err(_) => DEFAULT_LEVEL,
+    };
 
     let mut dispatch = fern::Dispatch::new()
         .format(|out, message, record| {
