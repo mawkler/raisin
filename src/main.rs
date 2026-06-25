@@ -1,5 +1,4 @@
 use crate::application::Application;
-use crate::compositor::Compositor;
 use clap::Parser;
 
 mod application;

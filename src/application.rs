@@ -44,7 +44,7 @@ impl Application {
             Self::get_cycle_window_target(focused_window.as_ref(), &sibling_windows);
 
         let Window { id, app_id, .. } = target_window;
-        log::info!("focusing window {id} ({app_id})",);
+        log::info!("focusing window {id} ({app_id})");
 
         self.compositor
             .focus_window(target_window)
