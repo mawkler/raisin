@@ -39,11 +39,13 @@
               cargo
               clippy
               rustc
+              rust-analyzer
+              rustfmt
               pre-commit
+
               gtk4
               gtk4-layer-shell
             ];
-            RUST_SRC_PATH = rustPlatform.rustLibSrc;
           };
       }
     );
