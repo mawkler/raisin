@@ -224,9 +224,7 @@ fn run_event_loop(
                     }
                     gtk4::glib::ControlFlow::Continue
                 }
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    gtk4::glib::ControlFlow::Break
-                }
+                Err(mpsc::TryRecvError::Disconnected) => gtk4::glib::ControlFlow::Break,
                 _ => gtk4::glib::ControlFlow::Continue,
             }
         },
@@ -243,7 +241,7 @@ pub(crate) fn run(
     if ipc::try_send("next")? {
         return Ok(());
     }
-    let cmd_rx = ipc::start_listener()?;
+    let cmd_rx = ipc::start_listener().context("failed to listen to socket")?;
 
     let all_windows = compositor.get_windows()?;
     let focused_app_id = all_windows.first().map(|w| w.app_id.to_lowercase());

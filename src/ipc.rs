@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{self};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -20,15 +20,15 @@ pub(crate) fn try_send(direction: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    match UnixStream::connect(&path) {
+    match net::UnixStream::connect(&path) {
         Ok(mut stream) => {
             let cmd = json!({"cycle": direction});
             serde_json::to_writer(&mut stream, &cmd)?;
-            writeln!(&mut stream)?;
+            writeln!(&mut stream).context("failed to write to Unix socket")?;
             Ok(true)
         }
-        Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionRefused => Ok(false),
-        Err(e) => Err(e.into()),
+        Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => Ok(false),
+        Err(err) => anyhow::bail!("failed to connect to Unix socket: {err}"),
     }
 }
 
@@ -39,15 +39,15 @@ pub(crate) fn start_listener() -> Result<mpsc::Receiver<String>> {
         std::fs::remove_file(&path).context("failed to remove stale socket")?;
     }
 
-    let listener = std::os::unix::net::UnixListener::bind(&path)
-        .context("failed to bind raisin socket")?;
+    let listener = net::UnixListener::bind(&path).context("failed to bind Unix socket")?;
     listener
         .set_nonblocking(true)
-        .context("failed to set socket non-blocking")?;
+        .context("failed to make socket non-blocking")?;
 
     let (cmd_tx, cmd_rx) = mpsc::channel();
 
     std::thread::spawn(move || {
+        // TODO: could this code be written more cleanly?
         for stream in listener.incoming() {
             let mut stream = match stream {
                 Ok(s) => s,
@@ -55,7 +55,10 @@ pub(crate) fn start_listener() -> Result<mpsc::Receiver<String>> {
                     std::thread::sleep(Duration::from_millis(10));
                     continue;
                 }
-                Err(_) => break,
+                Err(err) => {
+                    log::error!("listener got error {err}");
+                    break;
+                }
             };
 
             let line = BufReader::new(&mut stream)
@@ -64,7 +67,9 @@ pub(crate) fn start_listener() -> Result<mpsc::Receiver<String>> {
                 .and_then(Result::ok)
                 .unwrap_or_default();
 
-            let _ = cmd_tx.send(line);
+            let _ = cmd_tx
+                .send(line)
+                .inspect_err(|err| log::error!("failed to send: {err}"));
         }
     });
 
