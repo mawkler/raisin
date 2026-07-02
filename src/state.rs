@@ -21,6 +21,17 @@ impl Picker {
             self.current_window_idx = (self.current_window_idx + 1) % windows.len();
         }
     }
+
+    pub(crate) fn retreat_window(&mut self) {
+        let windows = self.current_group_windows();
+        if windows.len() >= 2 {
+            self.current_window_idx = if self.current_window_idx == 0 {
+                windows.len() - 1
+            } else {
+                self.current_window_idx - 1
+            };
+        }
+    }
 }
 
 pub(crate) fn build_groups(windows: Vec<Window>) -> Groups {

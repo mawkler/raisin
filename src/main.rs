@@ -6,6 +6,7 @@ mod cli;
 mod compositor;
 mod gui;
 mod input;
+mod ipc;
 mod logging;
 mod state;
 

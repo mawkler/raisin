@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use gtk4::gdk;
@@ -8,6 +10,7 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
 use crate::compositor::{ActiveCompositor, Compositor, Window};
 use crate::input;
+use crate::ipc;
 use crate::state::{self, Picker};
 
 fn flat_row_index(state: &Picker) -> i32 {
@@ -143,6 +146,7 @@ fn run_event_loop(
     picker_state: &Rc<RefCell<Picker>>,
     selected_window: &Rc<RefCell<Option<Window>>>,
     trigger_char: Option<char>,
+    cmd_rx: mpsc::Receiver<String>,
 ) {
     let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
     let controller = gtk4::EventControllerKey::new();
@@ -193,6 +197,41 @@ fn run_event_loop(
     window.add_controller(controller);
     window.present();
 
+    let state_for_cmds = picker_state.clone();
+    let list_box_for_cmds = list_box.clone();
+
+    let _cmd_source = gtk4::glib::source::timeout_add_local(
+        Duration::from_millis(50),
+        move || -> gtk4::glib::ControlFlow {
+            match cmd_rx.try_recv() {
+                Ok(cmd) if cmd.contains("\"next\"") => {
+                    let mut state = state_for_cmds.borrow_mut();
+                    state.advance_window();
+                    let flat_idx = flat_row_index(&state);
+                    if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
+                        list_box_for_cmds.select_row(Some(&row));
+                        row.grab_focus();
+                    }
+                    gtk4::glib::ControlFlow::Continue
+                }
+                Ok(cmd) if cmd.contains("\"prev\"") => {
+                    let mut state = state_for_cmds.borrow_mut();
+                    state.retreat_window();
+                    let flat_idx = flat_row_index(&state);
+                    if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
+                        list_box_for_cmds.select_row(Some(&row));
+                        row.grab_focus();
+                    }
+                    gtk4::glib::ControlFlow::Continue
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    gtk4::glib::ControlFlow::Break
+                }
+                _ => gtk4::glib::ControlFlow::Continue,
+            }
+        },
+    );
+
     main_loop.run();
 }
 
@@ -201,6 +240,11 @@ pub(crate) fn run(
     trigger_key: Option<char>,
     compositor: &ActiveCompositor,
 ) -> Result<()> {
+    if ipc::try_send("next")? {
+        return Ok(());
+    }
+    let cmd_rx = ipc::start_listener()?;
+
     let all_windows = compositor.get_windows()?;
     let focused_app_id = all_windows.first().map(|w| w.app_id.to_lowercase());
 
@@ -244,6 +288,7 @@ pub(crate) fn run(
         &picker_state,
         &selected_window,
         trigger_key,
+        cmd_rx,
     );
 
     if let Some(window) = selected_window.borrow().as_ref() {
