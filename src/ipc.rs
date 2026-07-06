@@ -1,8 +1,6 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::os::unix::net::{self};
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde_json::json;
@@ -32,7 +30,7 @@ pub(crate) fn try_send(direction: &str) -> Result<bool> {
     }
 }
 
-pub(crate) fn start_listener() -> Result<mpsc::Receiver<String>> {
+pub(crate) fn start_listener() -> Result<net::UnixListener> {
     let path = socket_path();
 
     if path.exists() {
@@ -44,34 +42,5 @@ pub(crate) fn start_listener() -> Result<mpsc::Receiver<String>> {
         .set_nonblocking(true)
         .context("failed to make socket non-blocking")?;
 
-    let (cmd_tx, cmd_rx) = mpsc::channel();
-
-    std::thread::spawn(move || {
-        // TODO: could this code be written more cleanly?
-        for stream in listener.incoming() {
-            let mut stream = match stream {
-                Ok(s) => s,
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(10));
-                    continue;
-                }
-                Err(err) => {
-                    log::error!("listener got error {err}");
-                    break;
-                }
-            };
-
-            let line = BufReader::new(&mut stream)
-                .lines()
-                .next()
-                .and_then(Result::ok)
-                .unwrap_or_default();
-
-            let _ = cmd_tx
-                .send(line)
-                .inspect_err(|err| log::error!("failed to send: {err}"));
-        }
-    });
-
-    Ok(cmd_rx)
+    Ok(listener)
 }

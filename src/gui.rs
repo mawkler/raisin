@@ -1,6 +1,7 @@
 use std::cell::RefCell;
+use std::io::{BufRead, BufReader};
+use std::os::unix::net;
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -146,7 +147,7 @@ fn run_event_loop(
     picker_state: &Rc<RefCell<Picker>>,
     selected_window: &Rc<RefCell<Option<Window>>>,
     trigger_char: Option<char>,
-    cmd_rx: mpsc::Receiver<String>,
+    listener: net::UnixListener,
 ) {
     let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
     let controller = gtk4::EventControllerKey::new();
@@ -203,30 +204,44 @@ fn run_event_loop(
     let _cmd_source = gtk4::glib::source::timeout_add_local(
         Duration::from_millis(50),
         move || -> gtk4::glib::ControlFlow {
-            match cmd_rx.try_recv() {
-                Ok(cmd) if cmd.contains("\"next\"") => {
-                    let mut state = state_for_cmds.borrow_mut();
-                    state.advance_window();
-                    let flat_idx = flat_row_index(&state);
-                    if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
-                        list_box_for_cmds.select_row(Some(&row));
-                        row.grab_focus();
-                    }
-                    gtk4::glib::ControlFlow::Continue
+            let (mut stream, _) = match listener.accept() {
+                Ok(accepted) => accepted,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    return gtk4::glib::ControlFlow::Continue;
                 }
-                Ok(cmd) if cmd.contains("\"prev\"") => {
-                    let mut state = state_for_cmds.borrow_mut();
-                    state.retreat_window();
-                    let flat_idx = flat_row_index(&state);
-                    if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
-                        list_box_for_cmds.select_row(Some(&row));
-                        row.grab_focus();
-                    }
-                    gtk4::glib::ControlFlow::Continue
+                Err(err) => {
+                    log::error!("listener accept failed: {err}");
+                    return gtk4::glib::ControlFlow::Break;
                 }
-                Err(mpsc::TryRecvError::Disconnected) => gtk4::glib::ControlFlow::Break,
-                _ => gtk4::glib::ControlFlow::Continue,
+            };
+
+            let _ = stream.set_nonblocking(true);
+
+            let line = BufReader::new(&mut stream)
+                .lines()
+                .next()
+                .and_then(Result::ok)
+                .unwrap_or_default();
+
+            if line.contains("\"next\"") {
+                let mut state = state_for_cmds.borrow_mut();
+                state.advance_window();
+                let flat_idx = flat_row_index(&state);
+                if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
+                    list_box_for_cmds.select_row(Some(&row));
+                    row.grab_focus();
+                }
+            } else if line.contains("\"prev\"") {
+                let mut state = state_for_cmds.borrow_mut();
+                state.retreat_window();
+                let flat_idx = flat_row_index(&state);
+                if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
+                    list_box_for_cmds.select_row(Some(&row));
+                    row.grab_focus();
+                }
             }
+
+            gtk4::glib::ControlFlow::Continue
         },
     );
 
@@ -241,7 +256,7 @@ pub(crate) fn run(
     if ipc::try_send("next")? {
         return Ok(());
     }
-    let cmd_rx = ipc::start_listener().context("failed to listen to socket")?;
+    let listener = ipc::start_listener().context("failed to listen to socket")?;
 
     let all_windows = compositor.get_windows()?;
     let focused_app_id = all_windows.first().map(|w| w.app_id.to_lowercase());
@@ -286,7 +301,7 @@ pub(crate) fn run(
         &picker_state,
         &selected_window,
         trigger_key,
-        cmd_rx,
+        listener,
     );
 
     if let Some(window) = selected_window.borrow().as_ref() {
