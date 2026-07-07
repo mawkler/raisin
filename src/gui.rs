@@ -150,17 +150,14 @@ fn build_layout(
     window.set_child(Some(&vbox));
 }
 
-fn run_event_loop(
-    window: &gtk4::Window,
+fn setup_key_handlers(
+    controller: &gtk4::EventControllerKey,
     list_box: &gtk4::ListBox,
     picker: &Rc<RefCell<Picker>>,
     selected_window: &Rc<RefCell<Option<Window>>>,
+    main_loop: &Rc<gtk4::glib::MainLoop>,
     trigger_char: Option<char>,
-    listener: net::UnixListener,
 ) {
-    let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
-    let controller = gtk4::EventControllerKey::new();
-
     let list_box_for_keys = list_box.clone();
     let picker_for_keys = picker.clone();
     let loop_for_esc = main_loop.clone();
@@ -199,6 +196,60 @@ fn run_event_loop(
             loop_for_super.quit();
         }
     });
+}
+
+fn handle_socket_command(
+    listener: &net::UnixListener,
+    picker: &Rc<RefCell<Picker>>,
+    list_box: &gtk4::ListBox,
+) -> gtk4::glib::ControlFlow {
+    let (mut stream, _) = match listener.accept() {
+        Ok(accepted) => accepted,
+        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+            return gtk4::glib::ControlFlow::Continue;
+        }
+        Err(err) => {
+            log::error!("listener accept failed: {err}");
+            return gtk4::glib::ControlFlow::Break;
+        }
+    };
+
+    let _ = stream
+        .set_nonblocking(true)
+        .inspect_err(|err| log::warn!("failed to make socket stream non-blocking: {err}"));
+
+    let line = BufReader::new(&mut stream)
+        .lines()
+        .next()
+        .and_then(Result::ok)
+        .unwrap_or_default();
+
+    let direction: picker::Direction = line.trim().into();
+    let mut picker = picker.borrow_mut();
+    cycle_and_select(&mut picker, list_box, direction);
+
+    gtk4::glib::ControlFlow::Continue
+}
+
+fn run_event_loop(
+    window: &gtk4::Window,
+    list_box: &gtk4::ListBox,
+    picker: &Rc<RefCell<Picker>>,
+    selected_window: &Rc<RefCell<Option<Window>>>,
+    trigger_char: Option<char>,
+    listener: net::UnixListener,
+) {
+    let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
+    let controller = gtk4::EventControllerKey::new();
+
+    setup_key_handlers(
+        &controller,
+        list_box,
+        picker,
+        selected_window,
+        &main_loop,
+        trigger_char,
+    );
 
     window.add_controller(controller);
     window.present();
@@ -206,33 +257,8 @@ fn run_event_loop(
     let picker_for_cmds = picker.clone();
     let list_box_for_cmds = list_box.clone();
 
-    let _cmd_source = gtk4::glib::source::timeout_add_local(Duration::from_millis(50), move || {
-        let (mut stream, _) = match listener.accept() {
-            Ok(accepted) => accepted,
-            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                return gtk4::glib::ControlFlow::Continue;
-            }
-            Err(err) => {
-                log::error!("listener accept failed: {err}");
-                return gtk4::glib::ControlFlow::Break;
-            }
-        };
-
-        let _ = stream
-            .set_nonblocking(true)
-            .inspect_err(|err| log::warn!("failed to make socket stream non-blocking: {err}"));
-
-        let line = BufReader::new(&mut stream)
-            .lines()
-            .next()
-            .and_then(Result::ok)
-            .unwrap_or_default();
-
-        let direction: picker::Direction = line.trim().into();
-        let mut picker = picker_for_cmds.borrow_mut();
-        cycle_and_select(&mut picker, &list_box_for_cmds, direction);
-
-        gtk4::glib::ControlFlow::Continue
+    let _ = gtk4::glib::source::timeout_add_local(Duration::from_millis(50), move || {
+        handle_socket_command(&listener, &picker_for_cmds, &list_box_for_cmds)
     });
 
     main_loop.run();

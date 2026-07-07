@@ -10,7 +10,7 @@ pub(crate) fn init(log_file: Option<&std::path::Path>) -> anyhow::Result<()> {
             .inspect_err(|_| {
                 eprintln!(
                     "$RUST_LOG is set to an invalid level '{level}', defaulting to {DEFAULT_LEVEL}"
-                )
+                );
             })
             .unwrap_or(DEFAULT_LEVEL),
         Err(_) => DEFAULT_LEVEL,
