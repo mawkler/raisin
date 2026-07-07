@@ -12,37 +12,37 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use crate::compositor::{ActiveCompositor, Compositor, Window};
 use crate::input;
 use crate::ipc;
-use crate::state::{self, Picker};
+use crate::picker::{self, Picker};
 
-fn flat_row_index(state: &Picker) -> i32 {
+fn flat_row_index(picker: &Picker) -> i32 {
     let mut flat = 0;
 
-    for key in state.groups.keys() {
-        if key == &state.current_group_name {
+    for key in picker.groups.keys() {
+        if key == &picker.current_group_name {
             break;
         }
-        flat += 1 + state.groups[key].len();
+        flat += 1 + picker.groups[key].len();
     }
-    flat += 1 + state.current_window_idx;
+    flat += 1 + picker.current_window_idx;
 
     i32::try_from(flat).expect("row index exceeds i32 range")
 }
 
-fn cycle_and_select(state: &mut Picker, list_box: &gtk4::ListBox, direction: state::Direction) {
-    state.cycle_window(direction);
-    let flat_idx = flat_row_index(state);
+fn cycle_and_select(picker: &mut Picker, list_box: &gtk4::ListBox, direction: picker::Direction) {
+    picker.cycle_window(direction);
+    let flat_idx = flat_row_index(picker);
     if let Some(row) = list_box.row_at_index(flat_idx) {
         list_box.select_row(Some(&row));
         row.grab_focus();
     }
 }
 
-fn populate_list_box(state: &Picker, list_box: &gtk4::ListBox) {
+fn populate_list_box(picker: &Picker, list_box: &gtk4::ListBox) {
     while let Some(row) = list_box.first_child() {
         list_box.remove(&row);
     }
 
-    for (app_id, windows) in &state.groups {
+    for (app_id, windows) in &picker.groups {
         let header = gtk4::Label::new(Some(app_id));
         header.add_css_class("group-header");
         header.set_halign(gtk4::Align::Start);
@@ -64,14 +64,14 @@ fn populate_list_box(state: &Picker, list_box: &gtk4::ListBox) {
     }
 }
 
-fn create_list_box(state: &Picker) -> gtk4::ListBox {
+fn create_list_box(picker: &Picker) -> gtk4::ListBox {
     let list_box = gtk4::ListBox::new();
     list_box.set_activate_on_single_click(false);
     list_box.set_selection_mode(gtk4::SelectionMode::Single);
 
-    populate_list_box(state, &list_box);
+    populate_list_box(picker, &list_box);
 
-    let idx = flat_row_index(state);
+    let idx = flat_row_index(picker);
     if let Some(row) = list_box.row_at_index(idx) {
         list_box.select_row(Some(&row));
         row.grab_focus();
@@ -153,7 +153,7 @@ fn build_layout(
 fn run_event_loop(
     window: &gtk4::Window,
     list_box: &gtk4::ListBox,
-    picker_state: &Rc<RefCell<Picker>>,
+    picker: &Rc<RefCell<Picker>>,
     selected_window: &Rc<RefCell<Option<Window>>>,
     trigger_char: Option<char>,
     listener: net::UnixListener,
@@ -162,7 +162,7 @@ fn run_event_loop(
     let controller = gtk4::EventControllerKey::new();
 
     let list_box_for_keys = list_box.clone();
-    let state_for_keys = picker_state.clone();
+    let picker_for_keys = picker.clone();
     let loop_for_esc = main_loop.clone();
 
     controller.connect_key_pressed(move |_, key, _, _| {
@@ -174,23 +174,23 @@ fn run_event_loop(
         if let Some(trigger_char) = trigger_char
             && input::matches_trigger_key(key, trigger_char)
         {
-            let mut state = state_for_keys.borrow_mut();
-            cycle_and_select(&mut state, &list_box_for_keys, state::Direction::Forward);
+            let mut picker = picker_for_keys.borrow_mut();
+            cycle_and_select(&mut picker, &list_box_for_keys, picker::Direction::Forward);
             return gtk4::glib::Propagation::Stop;
         }
 
         gtk4::glib::Propagation::Proceed
     });
 
-    let state_for_release = picker_state.clone();
+    let picker_for_release = picker.clone();
     let selected_for_release = selected_window.clone();
     let loop_for_super = main_loop.clone();
 
     controller.connect_key_released(move |_, key, _, _| {
         if input::is_super_key(key) {
-            let state = state_for_release.borrow();
-            let window_idx = state.current_window_idx;
-            let Some(window) = state.current_group_windows().get(window_idx) else {
+            let picker = picker_for_release.borrow();
+            let window_idx = picker.current_window_idx;
+            let Some(window) = picker.current_group_windows().get(window_idx) else {
                 log::error!("could not find any window with index {window_idx} in current group");
                 return;
             };
@@ -203,7 +203,7 @@ fn run_event_loop(
     window.add_controller(controller);
     window.present();
 
-    let state_for_cmds = picker_state.clone();
+    let picker_for_cmds = picker.clone();
     let list_box_for_cmds = list_box.clone();
 
     let _cmd_source = gtk4::glib::source::timeout_add_local(Duration::from_millis(50), move || {
@@ -228,9 +228,9 @@ fn run_event_loop(
             .and_then(Result::ok)
             .unwrap_or_default();
 
-        let direction = state::Direction::from(line.trim());
-        let mut state = state_for_cmds.borrow_mut();
-        cycle_and_select(&mut state, &list_box_for_cmds, direction);
+        let direction: picker::Direction = line.trim().into();
+        let mut picker = picker_for_cmds.borrow_mut();
+        cycle_and_select(&mut picker, &list_box_for_cmds, direction);
 
         gtk4::glib::ControlFlow::Continue
     });
@@ -243,7 +243,7 @@ pub(crate) fn run(
     trigger_key: Option<char>,
     compositor: &ActiveCompositor,
 ) -> Result<()> {
-    if ipc::try_send(state::Direction::Forward)? {
+    if ipc::try_send(picker::Direction::Forward)? {
         return Ok(());
     }
     let listener = ipc::start_listener().context("failed to listen to socket")?;
@@ -251,22 +251,22 @@ pub(crate) fn run(
     let all_windows = compositor.get_windows()?;
     let focused_app_id = all_windows.first().map(|w| w.app_id.to_lowercase());
 
-    let groups = state::build_groups(all_windows);
+    let groups = picker::build_groups(all_windows);
 
-    let Some(current_group_name) = state::group_name_search(&groups, search_string) else {
+    let Some(current_group_name) = picker::group_name_search(&groups, search_string) else {
         compositor.launch_application(search_string)?;
         return Ok(());
     };
 
     let current_group_name = current_group_name.clone();
 
-    let current_window_idx = state::initial_window_idx(
+    let current_window_idx = picker::initial_window_idx(
         &groups[&current_group_name],
         &current_group_name,
         focused_app_id.as_deref(),
     );
 
-    let picker_state = Rc::new(RefCell::new(Picker {
+    let picker = Rc::new(RefCell::new(Picker {
         groups,
         current_group_name,
         current_window_idx,
@@ -279,8 +279,8 @@ pub(crate) fn run(
     let window = create_overlay_window();
     load_css().context("failed to load CSS")?;
 
-    let list_box = create_list_box(&picker_state.borrow());
-    let header_label = create_header_label(&picker_state.borrow().current_group_name);
+    let list_box = create_list_box(&picker.borrow());
+    let header_label = create_header_label(&picker.borrow().current_group_name);
     let footer_label = create_footer_label();
 
     build_layout(&window, &list_box, &header_label, &footer_label);
@@ -288,7 +288,7 @@ pub(crate) fn run(
     run_event_loop(
         &window,
         &list_box,
-        &picker_state,
+        &picker,
         &selected_window,
         trigger_key,
         listener,

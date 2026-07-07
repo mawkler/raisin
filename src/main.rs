@@ -8,7 +8,7 @@ mod gui;
 mod input;
 mod ipc;
 mod logging;
-mod state;
+mod picker;
 
 fn main() -> anyhow::Result<()> {
     let args = cli::Args::parse();
