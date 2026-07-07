@@ -3,7 +3,8 @@ use std::os::unix::net::{self};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use serde_json::json;
+
+use crate::state::Direction;
 
 fn socket_path() -> PathBuf {
     let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
@@ -11,7 +12,7 @@ fn socket_path() -> PathBuf {
     PathBuf::from(runtime).join(format!("raisin-{display}.sock"))
 }
 
-pub(crate) fn try_send(direction: &str) -> Result<bool> {
+pub(crate) fn try_send(direction: Direction) -> Result<bool> {
     let path = socket_path();
 
     if !path.exists() {
@@ -20,9 +21,7 @@ pub(crate) fn try_send(direction: &str) -> Result<bool> {
 
     match net::UnixStream::connect(&path) {
         Ok(mut stream) => {
-            let cmd = json!({"cycle": direction});
-            serde_json::to_writer(&mut stream, &cmd)?;
-            writeln!(&mut stream).context("failed to write to Unix socket")?;
+            writeln!(stream, "{direction}").context("failed to write to Unix socket")?;
             Ok(true)
         }
         Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => Ok(false),
@@ -40,7 +39,7 @@ pub(crate) fn start_listener() -> Result<net::UnixListener> {
     let listener = net::UnixListener::bind(&path).context("failed to bind Unix socket")?;
     listener
         .set_nonblocking(true)
-        .context("failed to make socket non-blocking")?;
+        .context("failed to make socket listener non-blocking")?;
 
     Ok(listener)
 }

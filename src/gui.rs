@@ -28,6 +28,15 @@ fn flat_row_index(state: &Picker) -> i32 {
     i32::try_from(flat).expect("row index exceeds i32 range")
 }
 
+fn cycle_and_select(state: &mut Picker, list_box: &gtk4::ListBox, direction: state::Direction) {
+    state.cycle_window(direction);
+    let flat_idx = flat_row_index(state);
+    if let Some(row) = list_box.row_at_index(flat_idx) {
+        list_box.select_row(Some(&row));
+        row.grab_focus();
+    }
+}
+
 fn populate_list_box(state: &Picker, list_box: &gtk4::ListBox) {
     while let Some(row) = list_box.first_child() {
         list_box.remove(&row);
@@ -166,12 +175,7 @@ fn run_event_loop(
             && input::matches_trigger_key(key, trigger_char)
         {
             let mut state = state_for_keys.borrow_mut();
-            state.advance_window();
-            let flat_idx = flat_row_index(&state);
-            if let Some(row) = list_box_for_keys.row_at_index(flat_idx) {
-                list_box_for_keys.select_row(Some(&row));
-                row.grab_focus();
-            }
+            cycle_and_select(&mut state, &list_box_for_keys, state::Direction::Forward);
             return gtk4::glib::Propagation::Stop;
         }
 
@@ -190,6 +194,7 @@ fn run_event_loop(
                 log::error!("could not find any window with index {window_idx} in current group");
                 return;
             };
+
             *selected_for_release.borrow_mut() = Some(window.clone());
             loop_for_super.quit();
         }
@@ -201,49 +206,34 @@ fn run_event_loop(
     let state_for_cmds = picker_state.clone();
     let list_box_for_cmds = list_box.clone();
 
-    let _cmd_source = gtk4::glib::source::timeout_add_local(
-        Duration::from_millis(50),
-        move || -> gtk4::glib::ControlFlow {
-            let (mut stream, _) = match listener.accept() {
-                Ok(accepted) => accepted,
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    return gtk4::glib::ControlFlow::Continue;
-                }
-                Err(err) => {
-                    log::error!("listener accept failed: {err}");
-                    return gtk4::glib::ControlFlow::Break;
-                }
-            };
-
-            let _ = stream.set_nonblocking(true);
-
-            let line = BufReader::new(&mut stream)
-                .lines()
-                .next()
-                .and_then(Result::ok)
-                .unwrap_or_default();
-
-            if line.contains("\"next\"") {
-                let mut state = state_for_cmds.borrow_mut();
-                state.advance_window();
-                let flat_idx = flat_row_index(&state);
-                if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
-                    list_box_for_cmds.select_row(Some(&row));
-                    row.grab_focus();
-                }
-            } else if line.contains("\"prev\"") {
-                let mut state = state_for_cmds.borrow_mut();
-                state.retreat_window();
-                let flat_idx = flat_row_index(&state);
-                if let Some(row) = list_box_for_cmds.row_at_index(flat_idx) {
-                    list_box_for_cmds.select_row(Some(&row));
-                    row.grab_focus();
-                }
+    let _cmd_source = gtk4::glib::source::timeout_add_local(Duration::from_millis(50), move || {
+        let (mut stream, _) = match listener.accept() {
+            Ok(accepted) => accepted,
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                return gtk4::glib::ControlFlow::Continue;
             }
+            Err(err) => {
+                log::error!("listener accept failed: {err}");
+                return gtk4::glib::ControlFlow::Break;
+            }
+        };
 
-            gtk4::glib::ControlFlow::Continue
-        },
-    );
+        let _ = stream
+            .set_nonblocking(true)
+            .inspect_err(|err| log::warn!("failed to make socket stream non-blocking: {err}"));
+
+        let line = BufReader::new(&mut stream)
+            .lines()
+            .next()
+            .and_then(Result::ok)
+            .unwrap_or_default();
+
+        let direction = state::Direction::from(line.trim());
+        let mut state = state_for_cmds.borrow_mut();
+        cycle_and_select(&mut state, &list_box_for_cmds, direction);
+
+        gtk4::glib::ControlFlow::Continue
+    });
 
     main_loop.run();
 }
@@ -253,7 +243,7 @@ pub(crate) fn run(
     trigger_key: Option<char>,
     compositor: &ActiveCompositor,
 ) -> Result<()> {
-    if ipc::try_send("next")? {
+    if ipc::try_send(state::Direction::Forward)? {
         return Ok(());
     }
     let listener = ipc::start_listener().context("failed to listen to socket")?;

@@ -1,8 +1,34 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::compositor::Window;
 
 pub(crate) type Groups = BTreeMap<String, Vec<Window>>;
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum Direction {
+    Forward,
+    Backward,
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Forward => write!(f, "forward"),
+            Self::Backward => write!(f, "backward"),
+        }
+    }
+}
+
+impl From<&str> for Direction {
+    fn from(s: &str) -> Self {
+        match s {
+            "forward" => Self::Forward,
+            "backward" => Self::Backward,
+            _ => panic!("invalid direction: {s}"),
+        }
+    }
+}
 
 pub(crate) struct Picker {
     pub(crate) groups: Groups,
@@ -15,21 +41,23 @@ impl Picker {
         &self.groups[&self.current_group_name]
     }
 
-    pub(crate) fn advance_window(&mut self) {
+    pub(crate) fn cycle_window(&mut self, direction: Direction) {
         let windows = self.current_group_windows();
-        if windows.len() >= 2 {
-            self.current_window_idx = (self.current_window_idx + 1) % windows.len();
+        if windows.len() < 2 {
+            return;
         }
-    }
 
-    pub(crate) fn retreat_window(&mut self) {
-        let windows = self.current_group_windows();
-        if windows.len() >= 2 {
-            self.current_window_idx = if self.current_window_idx == 0 {
-                windows.len() - 1
-            } else {
-                self.current_window_idx - 1
-            };
+        match direction {
+            Direction::Forward => {
+                self.current_window_idx = (self.current_window_idx + 1) % windows.len();
+            }
+            Direction::Backward => {
+                self.current_window_idx = if self.current_window_idx >= 1 {
+                    self.current_window_idx - 1
+                } else {
+                    windows.len() - 1
+                };
+            }
         }
     }
 }
