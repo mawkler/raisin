@@ -28,9 +28,14 @@ fn flat_row_index(picker: &Picker) -> i32 {
     i32::try_from(flat).expect("row index exceeds i32 range")
 }
 
-fn cycle_and_select(picker: &mut Picker, list_box: &gtk4::ListBox, direction: picker::Direction) {
+fn cycle_and_select(
+    picker: &Rc<RefCell<Picker>>,
+    list_box: &gtk4::ListBox,
+    direction: picker::Direction,
+) {
+    let mut picker = picker.borrow_mut();
     picker.cycle_window(direction);
-    let flat_idx = flat_row_index(picker);
+    let flat_idx = flat_row_index(&picker);
     if let Some(row) = list_box.row_at_index(flat_idx) {
         list_box.select_row(Some(&row));
         row.grab_focus();
@@ -150,118 +155,105 @@ fn build_layout(
     window.set_child(Some(&vbox));
 }
 
-fn setup_key_handlers(
-    controller: &gtk4::EventControllerKey,
-    list_box: &gtk4::ListBox,
-    picker: &Rc<RefCell<Picker>>,
-    selected_window: &Rc<RefCell<Option<Window>>>,
-    main_loop: &Rc<gtk4::glib::MainLoop>,
+struct GuiState {
+    picker: Rc<RefCell<Picker>>,
+    list_box: gtk4::ListBox,
+    selected_window: Rc<RefCell<Option<Window>>>,
+    listener: net::UnixListener,
     trigger_char: Option<char>,
-) {
-    let list_box_for_keys = list_box.clone();
-    let picker_for_keys = picker.clone();
-    let loop_for_esc = main_loop.clone();
+}
 
-    controller.connect_key_pressed(move |_, key, _, _| {
-        if key == gdk::Key::Escape {
-            loop_for_esc.quit();
-            return gtk4::glib::Propagation::Stop;
-        }
+impl GuiState {
+    fn setup_key_handlers(
+        &self,
+        controller: &gtk4::EventControllerKey,
+        main_loop: &Rc<gtk4::glib::MainLoop>,
+    ) {
+        let list_box = self.list_box.clone();
+        let picker_for_keys = self.picker.clone();
+        let loop_for_esc = main_loop.clone();
+        let trigger_char = self.trigger_char;
 
-        if let Some(trigger_char) = trigger_char
-            && input::matches_trigger_key(key, trigger_char)
-        {
-            let mut picker = picker_for_keys.borrow_mut();
-            cycle_and_select(&mut picker, &list_box_for_keys, picker::Direction::Forward);
-            return gtk4::glib::Propagation::Stop;
-        }
+        controller.connect_key_pressed(move |_, key, _, _| {
+            if key == gdk::Key::Escape {
+                loop_for_esc.quit();
+                return gtk4::glib::Propagation::Stop;
+            }
 
-        gtk4::glib::Propagation::Proceed
-    });
+            if let Some(trigger_char) = trigger_char
+                && input::matches_trigger_key(key, trigger_char)
+            {
+                cycle_and_select(&picker_for_keys, &list_box, picker::Direction::Forward);
+                return gtk4::glib::Propagation::Stop;
+            }
 
-    let picker_for_release = picker.clone();
-    let selected_for_release = selected_window.clone();
-    let loop_for_super = main_loop.clone();
+            gtk4::glib::Propagation::Proceed
+        });
 
-    controller.connect_key_released(move |_, key, _, _| {
-        if input::is_super_key(key) {
-            let picker = picker_for_release.borrow();
-            let window_idx = picker.current_window_idx;
-            let Some(window) = picker.current_group_windows().get(window_idx) else {
-                log::error!("could not find any window with index {window_idx} in current group");
-                return;
+        let picker_for_release = self.picker.clone();
+        let selected = self.selected_window.clone();
+        let loop_for_super = main_loop.clone();
+
+        controller.connect_key_released(move |_, key, _, _| {
+            if input::is_super_key(key) {
+                let picker = picker_for_release.borrow();
+                let window_idx = picker.current_window_idx;
+                let Some(window) = picker.current_group_windows().get(window_idx) else {
+                    log::error!(
+                        "could not find any window with index {window_idx} in current group"
+                    );
+                    return;
+                };
+
+                *selected.borrow_mut() = Some(window.clone());
+                loop_for_super.quit();
+            }
+        });
+    }
+
+    fn run_event_loop(&self, window: &gtk4::Window) {
+        let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
+        let controller = gtk4::EventControllerKey::new();
+
+        self.setup_key_handlers(&controller, &main_loop);
+
+        window.add_controller(controller);
+        window.present();
+
+        let picker_for_cmds = self.picker.clone();
+        let list_box_for_cmds = self.list_box.clone();
+        let listener = self.listener.try_clone().expect("failed to clone listener");
+
+        let _ = gtk4::glib::source::timeout_add_local(Duration::from_millis(50), move || {
+            let (mut stream, _) = match listener.accept() {
+                Ok(accepted) => accepted,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    return gtk4::glib::ControlFlow::Continue;
+                }
+                Err(err) => {
+                    log::error!("listener accept failed: {err}");
+                    return gtk4::glib::ControlFlow::Break;
+                }
             };
 
-            *selected_for_release.borrow_mut() = Some(window.clone());
-            loop_for_super.quit();
-        }
-    });
-}
+            let _ = stream
+                .set_nonblocking(true)
+                .inspect_err(|err| log::warn!("failed to make socket stream non-blocking: {err}"));
 
-fn handle_socket_command(
-    listener: &net::UnixListener,
-    picker: &Rc<RefCell<Picker>>,
-    list_box: &gtk4::ListBox,
-) -> gtk4::glib::ControlFlow {
-    let (mut stream, _) = match listener.accept() {
-        Ok(accepted) => accepted,
-        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-            return gtk4::glib::ControlFlow::Continue;
-        }
-        Err(err) => {
-            log::error!("listener accept failed: {err}");
-            return gtk4::glib::ControlFlow::Break;
-        }
-    };
+            let line = BufReader::new(&mut stream)
+                .lines()
+                .next()
+                .and_then(Result::ok)
+                .unwrap_or_default();
 
-    let _ = stream
-        .set_nonblocking(true)
-        .inspect_err(|err| log::warn!("failed to make socket stream non-blocking: {err}"));
+            let direction: picker::Direction = line.trim().into();
+            cycle_and_select(&picker_for_cmds, &list_box_for_cmds, direction);
 
-    let line = BufReader::new(&mut stream)
-        .lines()
-        .next()
-        .and_then(Result::ok)
-        .unwrap_or_default();
+            gtk4::glib::ControlFlow::Continue
+        });
 
-    let direction: picker::Direction = line.trim().into();
-    let mut picker = picker.borrow_mut();
-    cycle_and_select(&mut picker, list_box, direction);
-
-    gtk4::glib::ControlFlow::Continue
-}
-
-fn run_event_loop(
-    window: &gtk4::Window,
-    list_box: &gtk4::ListBox,
-    picker: &Rc<RefCell<Picker>>,
-    selected_window: &Rc<RefCell<Option<Window>>>,
-    trigger_char: Option<char>,
-    listener: net::UnixListener,
-) {
-    let main_loop = Rc::new(gtk4::glib::MainLoop::new(None, false));
-    let controller = gtk4::EventControllerKey::new();
-
-    setup_key_handlers(
-        &controller,
-        list_box,
-        picker,
-        selected_window,
-        &main_loop,
-        trigger_char,
-    );
-
-    window.add_controller(controller);
-    window.present();
-
-    let picker_for_cmds = picker.clone();
-    let list_box_for_cmds = list_box.clone();
-
-    let _ = gtk4::glib::source::timeout_add_local(Duration::from_millis(50), move || {
-        handle_socket_command(&listener, &picker_for_cmds, &list_box_for_cmds)
-    });
-
-    main_loop.run();
+        main_loop.run();
+    }
 }
 
 pub(crate) fn run(
@@ -311,16 +303,17 @@ pub(crate) fn run(
 
     build_layout(&window, &list_box, &header_label, &footer_label);
 
-    run_event_loop(
-        &window,
-        &list_box,
-        &picker,
-        &selected_window,
-        trigger_key,
+    let state = GuiState {
+        picker,
+        list_box,
+        selected_window,
         listener,
-    );
+        trigger_char: trigger_key,
+    };
 
-    if let Some(window) = selected_window.borrow().as_ref() {
+    state.run_event_loop(&window);
+
+    if let Some(window) = state.selected_window.borrow().as_ref() {
         compositor.focus_window(window)?;
     }
 
