@@ -77,9 +77,9 @@ impl compositor::Compositor for Compositor {
 
     fn focus_window(&self, window: &compositor::Window) -> Result<()> {
         let address = &window.id;
-        let focus = &format!("hl.dsp.focus({{ window = 'address:{address}' }})");
+        let dispatch = format!("hl.dsp.focus({{window = \"address:{address}\"}})");
         let output = Command::new("hyprctl")
-            .args(["dispatch", focus])
+            .args(["dispatch", &dispatch])
             .output()
             .with_context(|| format!("failed to run hyprctl dispatch for {address}"))?;
 

@@ -313,6 +313,12 @@ pub(crate) fn run(
 
     state.run_event_loop(&window);
 
+    // Release the exclusive keyboard before asking compositor to focus the target window
+    window.set_visible(false);
+    while gtk4::glib::MainContext::default().iteration(false) {
+        // drain pending events to unmap the layer surface
+    }
+
     if let Some(window) = state.selected_window.borrow().as_ref() {
         compositor.focus_window(window)?;
     }
