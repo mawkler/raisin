@@ -1,0 +1,21 @@
+[package]
+name = "raisin"
+description = "Run-or-raise for Niri and Hyprland"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+# keep-sorted start
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+enum_dispatch = { workspace = true }
+fern = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# keep-sorted end
+
+[lints]
+workspace = true

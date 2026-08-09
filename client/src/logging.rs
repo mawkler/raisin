@@ -3,7 +3,13 @@ use log::LevelFilter;
 
 const DEFAULT_LEVEL: LevelFilter = LevelFilter::Info;
 
-pub(crate) fn init(log_file: Option<&std::path::Path>) -> anyhow::Result<()> {
+/// Initializes the global logger.
+///
+/// # Errors
+///
+/// Returns an error if the log file could not be created or if a logger was
+/// already initialized.
+pub fn init(log_file: Option<&std::path::Path>) -> anyhow::Result<()> {
     let level = match std::env::var("RUST_LOG") {
         Ok(level) => level
             .parse()

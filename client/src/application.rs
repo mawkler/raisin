@@ -1,37 +1,37 @@
 use anyhow::{Context, Result};
 
 use crate::compositor::{ActiveCompositor, Compositor, Window};
-use crate::{cli, gui};
 
-pub(crate) struct Application {
-    cli_arguments: cli::Args,
+pub struct Application {
+    app: String,
+    app_id: Option<String>,
     compositor: ActiveCompositor,
 }
 
 impl Application {
-    pub(crate) fn new(cli_arguments: cli::Args, compositor: ActiveCompositor) -> Self {
+    pub fn new(compositor: ActiveCompositor, app: &str, app_id: Option<&str>) -> Self {
         Self {
-            cli_arguments,
+            app: app.to_string(),
+            app_id: app_id.map(str::to_string),
             compositor,
         }
     }
 
-    pub(crate) fn run(&self) -> anyhow::Result<()> {
-        let args = &self.cli_arguments;
-
-        let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
-
-        if args.gui {
-            let trigger_key = self.cli_arguments.trigger_key;
-            return gui::run(&search_string, trigger_key, &self.compositor);
-        }
+    /// Runs the non-GUI run-or-raise logic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the window group, the focused window, or the
+    /// focus operation fails.
+    pub fn run(&self) -> Result<()> {
+        let search_string = self.app_id.as_deref().unwrap_or(&self.app).to_lowercase();
 
         let sibling_windows = self
             .get_window_group(&search_string)
             .context("failed to get window group")?;
 
         if sibling_windows.is_empty() {
-            self.compositor.launch_application(&args.app)?;
+            self.compositor.launch_application(&self.app)?;
             return Ok(());
         }
 

@@ -5,7 +5,7 @@ use super::{Compositor, integrations};
 
 /// A `Compositor` wrapper with all its implementation variants
 #[enum_dispatch(Compositor)]
-pub(crate) enum ActiveCompositor {
+pub enum ActiveCompositor {
     Hyprland(integrations::hyprland::Compositor),
     Niri(integrations::niri::Compositor),
 }
@@ -17,7 +17,13 @@ const COMPOSITORS: [ActiveCompositor; 2] = [
 
 const COMPOSITOR_ENV_VAR: &str = "RAISIN_COMPOSITOR";
 
-pub(crate) fn detect() -> anyhow::Result<ActiveCompositor> {
+/// Detects the currently running compositor.
+///
+/// # Errors
+///
+/// Returns an error if `RAISIN_COMPOSITOR` is set to an unsupported value, or
+/// if no supported compositor could be detected.
+pub fn detect() -> anyhow::Result<ActiveCompositor> {
     if let Ok(env_compositor) = std::env::var(COMPOSITOR_ENV_VAR) {
         let compositor = COMPOSITORS
             .into_iter()

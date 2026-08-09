@@ -1,0 +1,24 @@
+[package]
+name = "raisin-daemon"
+description = "Long-running raisin server that owns the window switcher GUI"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.85"
+
+[[bin]]
+name = "raisin-daemon"
+path = "src/main.rs"
+
+[dependencies]
+# keep-sorted start
+anyhow = { workspace = true }
+clap = { workspace = true }
+gtk4 = { workspace = true }
+gtk4-layer-shell = { workspace = true }
+log = { workspace = true }
+raisin = { path = "../client" }
+serde_json = { workspace = true }
+# keep-sorted end
+
+[lints]
+workspace = true

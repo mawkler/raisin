@@ -795,10 +795,21 @@ dependencies = [
  "clap",
  "enum_dispatch",
  "fern",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "raisin-daemon"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "clap",
  "gtk4",
  "gtk4-layer-shell",
  "log",
- "serde",
+ "raisin",
  "serde_json",
 ]
 
