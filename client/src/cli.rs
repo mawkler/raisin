@@ -17,8 +17,13 @@ use std::path::PathBuf;
 /// Run-or-raise for Hyprland and Niri
 pub struct Args {
     /// Command to run the application (e.g., `ghostty`).
-    pub app: String,
 
+    // This is an Option because of a clap issue where it thinks the
+    // argument hasn't been provided, even when it has
+    // TODO: check if it's possible to improve this. I'm guessing it's because we still have non-GUI
+    // support
+    #[arg(required = true)]
+    pub app: Option<String>,
     /// Window app ID to match (e.g., `com.mitchellh.ghostty`). Optional.
     ///
     /// If omitted, the app name is used as a substring to match against

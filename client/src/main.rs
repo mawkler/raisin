@@ -23,8 +23,12 @@ fn main() -> Result<()> {
             send_message(&ipc::Message::Backward { app, app_id })
         }
         None => {
+            let app = args
+                .app
+                .as_deref()
+                .expect("clap enforces app when no subcommand is used");
             let compositor = raisin::compositor::detect()?;
-            Application::new(compositor, &args.app, args.app_id.as_deref()).run()
+            Application::new(compositor, app, args.app_id.as_deref()).run()
         }
     }
 }
