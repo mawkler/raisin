@@ -250,7 +250,28 @@ impl Gui {
             log::info!("super was released during grab setup, ending session");
             self.end_session();
             self.focus(&window);
+        } else if !Self::super_key_held() {
+            // Super was released before the grab went live, so no release
+            // event will ever reach us; the current modifier state is the
+            // only record of it.
+            log::info!("super was already released when the grab was established, ending session");
+            self.on_super_released();
         }
+    }
+
+    fn super_key_held() -> bool {
+        let Some(display) = gdk::Display::default() else {
+            return false;
+        };
+        let Some(seat) = display.default_seat() else {
+            return false;
+        };
+        let Some(device) = seat.keyboard() else {
+            return false;
+        };
+        device
+            .modifier_state()
+            .contains(gdk::ModifierType::SUPER_MASK)
     }
 
     fn end_session(&self) {
