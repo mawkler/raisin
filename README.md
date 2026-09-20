@@ -41,6 +41,39 @@ holding `Super` to pick a window.
 `raisin switch <app>` does the same thing from a keybinding of your own, and says so plainly if the
 switcher isn't running.
 
+## Configuration
+
+Raisin reads `$XDG_CONFIG_HOME/raisin/config.toml` — usually `~/.config/raisin/config.toml` — or
+whichever file `raisin daemon --config <path>` names. Every setting has a default, so the file is
+optional, and only needs the parts you want to change.
+
+```toml
+# Which letter targets which application. Listing any replaces the built-in set.
+[apps]
+t = "ghostty"                                        # Super + t
+s = "spotify"
+i = { command = "brave", app_id = "brave-browser" }  # when the window class differs
+
+# Keys that only do something while the switcher is on screen. The rest of the
+# time they belong to whatever you're using.
+[keys]
+next = "Tab"              # move the highlight on
+previous = "SHIFT + Tab"  # and back
+cancel = "Escape"         # close without switching
+
+[switcher]
+delay = 90        # milliseconds Super has to stay held before the switcher appears
+width = 460       # pixels
+max_height = 420  # pixels; the list scrolls once it would grow past this
+```
+
+You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Super and Tab.
+
+Holding `Shift` with an application's letter walks its windows the other way, the way Alt-Shift-Tab
+does. That needs no configuration.
+
+A setting the file misspells is an error at startup rather than a line that quietly does nothing.
+
 ## Run/install
 
 ### Run with Nix

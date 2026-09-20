@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(clap::Parser, Debug)]
 #[command(
     author,
@@ -38,7 +40,12 @@ pub(crate) enum Command {
     ///
     /// Super and Escape are shared rather than taken over, so your own
     /// bindings on them keep working.
-    Daemon,
+    Daemon {
+        /// Configuration file to read instead of
+        /// `$XDG_CONFIG_HOME/raisin/config.toml`.
+        #[arg(long, value_name = "PATH")]
+        config: Option<PathBuf>,
+    },
 
     /// Switch to an application through the running switcher.
     Switch {

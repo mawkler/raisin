@@ -12,19 +12,38 @@ use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 
-use crate::bindings::BINDINGS;
 use crate::compositor::{self, Window};
+use crate::config::{Config, Key, Keys};
 
 /// Everything raisin asks Hyprland to emit is prefixed with this, which is
 /// also how raisin recognises its own keybinds among everyone else's.
 const EVENT_PREFIX: &str = "raisin:";
 
-/// The modifier mask Hyprland gives Super.
-const SUPER_MODMASK: u32 = 64;
+/// What Hyprland counts each modifier as.
+fn modmask(modifier: &str) -> u32 {
+    match modifier.to_uppercase().as_str() {
+        "SHIFT" => 1,
+        "CAPS" => 2,
+        "CTRL" | "CONTROL" => 4,
+        "ALT" | "MOD1" => 8,
+        "MOD2" => 16,
+        "MOD3" => 32,
+        "SUPER" | "WIN" | "LOGO" | "MOD4" | "META" => 64,
+        "MOD5" => 128,
+        _ => 0,
+    }
+}
 
 /// The event Hyprland emits when a mapped key is pressed, followed by the
 /// letter that was pressed.
 pub(crate) const SWITCH_EVENT: &str = "raisin:switch:";
+
+/// The same, for Shift and a mapped key, which goes the other way.
+pub(crate) const BACK_EVENT: &str = "raisin:back:";
+
+/// The events the keys that steer a switch in progress emit.
+pub(crate) const NEXT_EVENT: &str = "raisin:next";
+pub(crate) const PREVIOUS_EVENT: &str = "raisin:previous";
 
 /// The event Hyprland emits when Super is released.
 pub(crate) const CONFIRM_EVENT: &str = "raisin:confirm";
@@ -149,7 +168,7 @@ struct Bind {
     /// e.g. `switch:t`.
     name: String,
     /// The modifiers that have to be held, as Hyprland names them.
-    mods: Option<&'static str>,
+    mods: Vec<String>,
     /// The key itself, e.g. `i`, `Super_L` or `Escape`.
     key: String,
     /// The event Hyprland emits for it.
@@ -216,17 +235,17 @@ impl Bind {
                     Ownership::Exclusive => format!(
                         r#"if e then e.bind:remove() end hl.unbind("{}") __raisin["{}"] = {{ bind = {bind}, shared = false }}"#,
                         self.keys(language),
-                        self.name,
+                        self.lua_name(),
                     ),
                     Ownership::Shared => format!(
                         r#"if e then e.bind:set_enabled(true) else __raisin["{}"] = {{ bind = {bind}, shared = true }} end"#,
-                        self.name,
+                        self.lua_name(),
                     ),
                 };
 
                 vec![format!(
                     r#"eval __raisin = __raisin or {{}} do local e = __raisin["{}"] {body} end"#,
-                    self.name
+                    self.lua_name()
                 )]
             }
         }
@@ -238,15 +257,15 @@ impl Bind {
             (ConfigLanguage::Legacy, Ownership::Shared) if self.occupied => vec![],
             (ConfigLanguage::Legacy, _) => vec![format!("keyword unbind {}", self.keys(language))],
             (ConfigLanguage::Lua, Ownership::Exclusive) => vec![format!(
-                r#"eval do local e = __raisin["{}"] if e then e.bind:remove() __raisin["{}"] = nil end end"#,
-                self.name, self.name
+                r#"eval do local e = __raisin["{name}"] if e then e.bind:remove() __raisin["{name}"] = nil end end"#,
+                name = self.lua_name()
             )],
             // Disabling is the only way to stop a shared Lua bind firing
             // without removing the key's other bindings. It stops matching
             // keys and stops consuming them; the next run enables it again.
             (ConfigLanguage::Lua, Ownership::Shared) => vec![format!(
                 r#"eval do local e = __raisin["{}"] if e then e.bind:set_enabled(false) end end"#,
-                self.name
+                self.lua_name()
             )],
         }
     }
@@ -254,18 +273,28 @@ impl Bind {
     /// The key, spelled the way the configuration language in use spells it:
     /// `SUPER,i` for the legacy parser, `SUPER + i` for the Lua one.
     fn keys(&self, language: ConfigLanguage) -> String {
-        match (language, self.mods) {
-            (ConfigLanguage::Legacy, mods) => format!("{},{}", mods.unwrap_or_default(), self.key),
-            (ConfigLanguage::Lua, Some(mods)) => format!("{mods} + {}", self.key),
-            (ConfigLanguage::Lua, None) => self.key.clone(),
+        match language {
+            ConfigLanguage::Legacy => format!("{},{}", self.mods.join(" "), self.key),
+            ConfigLanguage::Lua if self.mods.is_empty() => self.key.clone(),
+            ConfigLanguage::Lua => format!("{} + {}", self.mods.join(" + "), self.key),
         }
     }
 
+    /// What the bind is called in Hyprland's Lua state.
+    ///
+    /// The definition is part of the name, so changing a key or a flag makes a
+    /// new bind rather than re-enabling the one the last run left behind.
+    fn lua_name(&self) -> String {
+        format!(
+            "{}@{}#{}",
+            self.name,
+            self.keys(ConfigLanguage::Lua),
+            self.flags.letters()
+        )
+    }
+
     fn modmask(&self) -> u32 {
-        match self.mods {
-            Some("SUPER") => SUPER_MODMASK,
-            _ => 0,
-        }
+        self.mods.iter().map(|modifier| modmask(modifier)).sum()
     }
 }
 
@@ -307,6 +336,67 @@ impl Flags {
     }
 }
 
+/// The binds for one steering key.
+///
+/// Super is held for the whole of an ordinary switch, so the key is bound with
+/// it; a switch started from `raisin switch` has nobody holding anything, so
+/// it's bound without it too. Hyprland matches the modifiers exactly, so only
+/// one of the two ever fires, and `SHIFT + Tab` stays distinct from `Tab`.
+fn session_binds(name: &str, key: &Key, event: &str) -> Vec<Bind> {
+    [("", Vec::new()), (":super", vec!["SUPER".to_owned()])]
+        .into_iter()
+        .map(|(suffix, mut mods)| {
+            mods.extend(key.mods.iter().cloned());
+
+            Bind {
+                name: format!("{name}{suffix}"),
+                mods,
+                key: key.key.clone(),
+                event: event.to_owned(),
+                flags: Flags {
+                    // A bind left behind by a daemon that crashed can then
+                    // never swallow anyone's key.
+                    non_consuming: true,
+                    ..Flags::default()
+                },
+                ownership: Ownership::Shared,
+                occupied: false,
+            }
+        })
+        .collect()
+}
+
+/// The binds that close the switcher.
+///
+/// Cancelling means the same thing whatever is held down, so the key is bound
+/// once and matched loosely — unless a steering key uses it too, in which case
+/// the modifiers are what tells them apart and have to be matched exactly.
+fn cancel_binds(keys: &Keys) -> Vec<Bind> {
+    let steering = [keys.next.as_ref(), keys.previous.as_ref()];
+    let shared_with_steering = steering
+        .into_iter()
+        .flatten()
+        .any(|key| key.key == keys.cancel.key);
+
+    if shared_with_steering || !keys.cancel.mods.is_empty() {
+        return session_binds("cancel", &keys.cancel, CANCEL_EVENT);
+    }
+
+    vec![Bind {
+        name: "cancel".to_owned(),
+        mods: Vec::new(),
+        key: keys.cancel.key.clone(),
+        event: CANCEL_EVENT.to_owned(),
+        flags: Flags {
+            non_consuming: true,
+            ignore_mods: true,
+            ..Flags::default()
+        },
+        ownership: Ownership::Shared,
+        occupied: false,
+    }]
+}
+
 /// A keybind Hyprland already had, as `binds` reports it.
 #[derive(serde::Deserialize)]
 struct ExistingBind {
@@ -340,61 +430,72 @@ fn key_is_occupied(bind: &Bind) -> bool {
 pub(crate) struct Binds {
     /// Installed for the daemon's lifetime.
     binds: Vec<Bind>,
-    /// Installed only while the switcher is on screen, so that Escape reaches
-    /// the applications underneath the rest of the time.
-    escape: Bind,
+    /// Installed only while the switcher is on screen.
+    session: Vec<Bind>,
     language: ConfigLanguage,
 }
 
 impl Binds {
-    /// Installs a binding for every mapped letter, plus the one that confirms
-    /// a switch when Super is released.
-    pub(crate) fn install() -> Result<Self> {
-        let switches = BINDINGS.iter().map(|binding| Bind {
-            name: format!("switch:{}", binding.key),
-            mods: Some("SUPER"),
-            key: binding.key.to_string(),
-            event: format!("{SWITCH_EVENT}{}", binding.key),
-            flags: Flags::default(),
-            ownership: Ownership::Exclusive,
-            occupied: false,
+    /// Installs a binding for every mapped letter — one for each direction —
+    /// plus the ones that confirm a switch when Super is released.
+    pub(crate) fn install(config: &Config) -> Result<Self> {
+        let switches = config.apps.keys().flat_map(|key| {
+            [
+                Bind {
+                    name: format!("switch:{key}"),
+                    mods: vec!["SUPER".to_owned()],
+                    key: key.to_string(),
+                    event: format!("{SWITCH_EVENT}{key}"),
+                    flags: Flags::default(),
+                    ownership: Ownership::Exclusive,
+                    occupied: false,
+                },
+                // Shift and the same key walks the group the other way.
+                Bind {
+                    name: format!("back:{key}"),
+                    mods: vec!["SUPER".to_owned(), "SHIFT".to_owned()],
+                    key: key.to_string(),
+                    event: format!("{BACK_EVENT}{key}"),
+                    flags: Flags::default(),
+                    ownership: Ownership::Exclusive,
+                    occupied: false,
+                },
+            ]
         });
 
         let confirms = SUPER_KEYS.iter().map(|key| Bind {
             name: format!("confirm:{key}"),
-            mods: Some("SUPER"),
+            mods: vec!["SUPER".to_owned()],
             key: (*key).to_owned(),
             event: CONFIRM_EVENT.to_owned(),
             flags: Flags {
                 release: true,
                 transparent: true,
                 non_consuming: true,
-                ..Flags::default()
+                // Shift is held whenever the user was walking a group
+                // backwards, and letting go of Super still means confirm.
+                ignore_mods: true,
             },
             ownership: Ownership::Shared,
             occupied: false,
         });
 
+        let steering = [
+            ("next", config.keys.next.as_ref(), NEXT_EVENT),
+            ("previous", config.keys.previous.as_ref(), PREVIOUS_EVENT),
+        ];
+        let mut session: Vec<_> = steering
+            .into_iter()
+            .filter_map(|(name, key, event)| Some((name, key?, event)))
+            .flat_map(|(name, key, event)| session_binds(name, key, event))
+            .collect();
+
+        session.extend(cancel_binds(&config.keys));
+
         let mut binds = Self {
             language: config_language(),
             binds: switches.chain(confirms).collect(),
-            escape: Bind {
-                name: "cancel".to_owned(),
-                mods: None,
-                key: "Escape".to_owned(),
-                event: CANCEL_EVENT.to_owned(),
-                // Super is still held while the switcher is up, so the bind
-                // has to fire regardless of the modifiers. It also leaves the
-                // key to the application, so that a bind left behind by a
-                // daemon that crashed can't swallow anyone's Escape.
-                flags: Flags {
-                    non_consuming: true,
-                    ignore_mods: true,
-                    ..Flags::default()
-                },
-                ownership: Ownership::Shared,
-                occupied: false,
-            },
+            session,
         };
 
         binds.note_occupied_keys();
@@ -410,17 +511,19 @@ impl Binds {
             return;
         }
 
-        for bind in &mut self.binds {
+        for bind in self.binds.iter_mut().chain(&mut self.session) {
             if bind.ownership == Ownership::Shared {
                 bind.occupied = key_is_occupied(bind);
             }
         }
-
-        self.escape.occupied = key_is_occupied(&self.escape);
     }
 
-    /// Drops binds an earlier run left in Hyprland's Lua state for letters
-    /// that are no longer mapped.
+    /// Drops binds an earlier run left in Hyprland's Lua state that this run
+    /// has no use for: a letter that is no longer mapped, or a key or flag
+    /// that has changed since.
+    ///
+    /// A shared bind can only be disabled, never removed, because removing it
+    /// would take the key's other bindings with it.
     fn forget_stale_lua_binds(&self) {
         if self.language != ConfigLanguage::Lua {
             return;
@@ -429,11 +532,12 @@ impl Binds {
         let keep: Vec<_> = self
             .binds
             .iter()
-            .map(|bind| format!(r#"["{}"] = true"#, bind.name))
+            .chain(&self.session)
+            .map(|bind| format!(r#"["{}"] = true"#, bind.lua_name()))
             .collect();
 
         let command = format!(
-            r"eval __raisin = __raisin or {{}} do local keep = {{ {} }} for name, e in pairs(__raisin) do if not e.shared and not keep[name] then e.bind:remove() __raisin[name] = nil end end end",
+            r"eval __raisin = __raisin or {{}} do local keep = {{ {} }} for name, e in pairs(__raisin) do if not keep[name] then if e.shared then e.bind:set_enabled(false) else e.bind:remove() end __raisin[name] = nil end end end",
             keep.join(", ")
         );
 
@@ -456,19 +560,25 @@ impl Binds {
         Ok(())
     }
 
-    /// Takes Escape for as long as the switcher is on screen to use it.
-    pub(crate) fn capture_escape(&self) {
-        for command in self.escape.add(self.language) {
-            if let Err(error) = request(&command) {
-                eprintln!("raisin: failed to bind Escape: {error:#}");
+    /// Binds the keys that steer a switch, for as long as the switcher is on
+    /// screen to use them. They belong to the applications underneath the rest
+    /// of the time.
+    pub(crate) fn capture_session_keys(&self) {
+        for bind in &self.session {
+            for command in bind.add(self.language) {
+                if let Err(error) = request(&command) {
+                    eprintln!("raisin: failed to bind {}: {error:#}", bind.key);
+                }
             }
         }
     }
 
-    /// Gives Escape back.
-    pub(crate) fn release_escape(&self) {
-        for command in self.escape.remove(self.language) {
-            let _ = request(&command);
+    /// Gives them back.
+    pub(crate) fn release_session_keys(&self) {
+        for bind in &self.session {
+            for command in bind.remove(self.language) {
+                let _ = request(&command);
+            }
         }
     }
 
@@ -487,7 +597,7 @@ impl Binds {
             }
         }
 
-        self.release_escape();
+        self.release_session_keys();
     }
 }
 
@@ -573,7 +683,7 @@ mod tests {
     fn letter_bind() -> Bind {
         Bind {
             name: "switch:t".to_owned(),
-            mods: Some("SUPER"),
+            mods: vec!["SUPER".to_owned()],
             key: "t".to_owned(),
             event: "raisin:switch:t".to_owned(),
             flags: Flags::default(),
@@ -585,7 +695,7 @@ mod tests {
     fn confirm_bind(occupied: bool) -> Bind {
         Bind {
             name: "confirm:Super_L".to_owned(),
-            mods: Some("SUPER"),
+            mods: vec!["SUPER".to_owned()],
             key: "Super_L".to_owned(),
             event: "raisin:confirm".to_owned(),
             flags: Flags {

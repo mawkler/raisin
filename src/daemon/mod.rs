@@ -8,27 +8,23 @@ mod overlay;
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
+use std::path::Path;
 use std::rc::Rc;
 use std::thread;
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use gtk4::glib;
 
-use crate::bindings::{self, Target};
 use crate::compositor::Compositor as _;
 use crate::compositor::integrations::hyprland::{
-    self, Binds, CANCEL_EVENT, CONFIRM_EVENT, SWITCH_EVENT,
+    self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, NEXT_EVENT, PREVIOUS_EVENT, SWITCH_EVENT,
 };
+use crate::config::{Config, Target};
+use crate::switcher::Direction;
 use controller::{Controller, Effect, Event};
 use overlay::Overlay;
 
 pub(crate) use ipc::switch;
-
-/// How long Super has to stay held before the switcher appears. Long enough
-/// that a tap never puts anything on screen, short enough to feel immediate
-/// when the user does mean to look.
-const REVEAL_DELAY: Duration = Duration::from_millis(90);
 
 /// Runs the switcher until it's asked to stop.
 ///
@@ -36,7 +32,8 @@ const REVEAL_DELAY: Duration = Duration::from_millis(90);
 ///
 /// Returns an error if Hyprland isn't running, if another daemon already is,
 /// or if GTK, the window or the keybinds couldn't be set up.
-pub(crate) fn run() -> Result<()> {
+pub(crate) fn run(config: Option<&Path>) -> Result<()> {
+    let config = Rc::new(Config::load(config)?);
     let compositor = hyprland::Compositor;
 
     anyhow::ensure!(
@@ -50,13 +47,16 @@ pub(crate) fn run() -> Result<()> {
 
     gtk4::init().context("failed to initialise GTK")?;
 
-    let binds = Rc::new(Binds::install().context("failed to install raisin's Hyprland keybinds")?);
+    let binds =
+        Rc::new(Binds::install(&config).context("failed to install raisin's Hyprland keybinds")?);
 
     let daemon = Rc::new(Daemon {
         controller: RefCell::new(Controller::default()),
-        overlay: Overlay::new().context("failed to build the switcher window")?,
+        overlay: Overlay::new(&config.switcher, &config.keys)
+            .context("failed to build the switcher window")?,
         compositor,
         binds: Rc::clone(&binds),
+        config: Rc::clone(&config),
     });
 
     let main_loop = glib::MainLoop::new(None, false);
@@ -79,6 +79,7 @@ struct Daemon {
     overlay: Overlay,
     compositor: hyprland::Compositor,
     binds: Rc<Binds>,
+    config: Rc<Config>,
 }
 
 impl Daemon {
@@ -95,7 +96,7 @@ impl Daemon {
             Effect::ScheduleReveal { session } => {
                 let daemon = Rc::clone(self);
 
-                glib::timeout_add_local_once(REVEAL_DELAY, move || {
+                glib::timeout_add_local_once(self.config.switcher.delay(), move || {
                     daemon.handle(Event::Reveal { session });
                 });
             }
@@ -111,11 +112,11 @@ impl Daemon {
             }
             Effect::Show => {
                 self.overlay.show();
-                self.binds.capture_escape();
+                self.binds.capture_session_keys();
             }
             Effect::Hide => {
                 self.overlay.hide();
-                self.binds.release_escape();
+                self.binds.release_session_keys();
             }
             Effect::Focus(window) => {
                 if let Err(error) = self.compositor.focus_window(&window) {
@@ -132,7 +133,7 @@ impl Daemon {
 
     /// A mapped key was pressed: take a snapshot of the open windows and let
     /// the controller decide what it means.
-    fn trigger(self: &Rc<Self>, target: Target) {
+    fn trigger(self: &Rc<Self>, target: Target, direction: Direction) {
         let windows = match self.compositor.get_windows() {
             Ok(windows) => windows,
             Err(error) => {
@@ -151,6 +152,7 @@ impl Daemon {
 
         self.handle(Event::Trigger {
             target,
+            direction,
             windows,
             focused,
         });
@@ -199,18 +201,33 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
     match event {
         "custom" if data == CONFIRM_EVENT => daemon.handle(Event::Confirm),
         "custom" if data == CANCEL_EVENT => daemon.handle(Event::Cancel),
+        "custom" if data == NEXT_EVENT => daemon.handle(Event::Cycle {
+            direction: Direction::Forward,
+        }),
+        "custom" if data == PREVIOUS_EVENT => daemon.handle(Event::Cycle {
+            direction: Direction::Backward,
+        }),
         "custom" => {
-            let Some(key) = data
-                .strip_prefix(SWITCH_EVENT)
-                .and_then(|key| key.chars().next())
+            let pressed = [
+                (SWITCH_EVENT, Direction::Forward),
+                (BACK_EVENT, Direction::Backward),
+            ]
+            .into_iter()
+            .find_map(|(event, direction)| Some((data.strip_prefix(event)?, direction)));
+
+            let Some((key, direction)) = pressed else {
+                return;
+            };
+            let Some(target) = key
+                .chars()
+                .next()
+                .and_then(|key| daemon.config.target(key))
+                .cloned()
             else {
                 return;
             };
-            let Some(binding) = bindings::binding(key) else {
-                return;
-            };
 
-            daemon.trigger(binding.target());
+            daemon.trigger(target, direction);
         }
         // A reload wipes keybinds that were added over IPC.
         "configreloaded" => daemon.binds.reinstall(),
@@ -244,7 +261,7 @@ fn watch_clients(daemon: &Rc<Daemon>, listener: &UnixListener) -> Result<()> {
         while let Ok(message) = receiver.recv().await {
             match message {
                 ipc::Message::Switch { app, app_id } => {
-                    daemon.trigger(Target::new(&app, app_id.as_deref()));
+                    daemon.trigger(Target::new(&app, app_id.as_deref()), Direction::Forward);
                 }
             }
         }

@@ -6,9 +6,9 @@
 //! overlay, and that confirming never waits for the overlay to be drawn, are
 //! properties of this type, not of how fast a machine happens to draw.
 
-use crate::bindings::Target;
 use crate::compositor::Window;
-use crate::switcher::{self, Session};
+use crate::config::Target;
+use crate::switcher::{self, Direction, Session};
 
 /// Everything that can happen to a switch in progress.
 #[derive(Debug)]
@@ -16,9 +16,12 @@ pub(crate) enum Event {
     /// A mapped key was pressed while Super is held down.
     Trigger {
         target: Target,
+        direction: Direction,
         windows: Vec<Window>,
         focused: Option<Window>,
     },
+    /// A key that steers a switch already in progress was pressed.
+    Cycle { direction: Direction },
     /// Super was released.
     Confirm,
     /// Escape was pressed.
@@ -70,9 +73,11 @@ impl Controller {
         match event {
             Event::Trigger {
                 target,
+                direction,
                 windows,
                 focused,
-            } => self.trigger(&target, windows, focused.as_ref()),
+            } => self.trigger(&target, direction, windows, focused.as_ref()),
+            Event::Cycle { direction } => self.cycle(direction),
             Event::Confirm => self.confirm(),
             Event::Cancel => self.end(),
             Event::Reveal { session } => self.reveal(session),
@@ -87,11 +92,12 @@ impl Controller {
     fn trigger(
         &mut self,
         target: &Target,
+        direction: Direction,
         windows: Vec<Window>,
         focused: Option<&Window>,
     ) -> Vec<Effect> {
         if self.session.is_none() {
-            return self.start(target, windows, focused);
+            return self.start(target, direction, windows, focused);
         }
 
         let session = self
@@ -102,7 +108,7 @@ impl Controller {
         let retarget = match session.find_group(target.search()).map(str::to_owned) {
             Some(group) => {
                 let same_group = group == session.group();
-                session.switch_to_group(&group, focused, &target.app);
+                session.switch_to_group(&group, focused, &target.app, direction);
                 Retarget::Group { same_group }
             }
             None => Retarget::NoWindows,
@@ -126,6 +132,7 @@ impl Controller {
     fn start(
         &mut self,
         target: &Target,
+        direction: Direction,
         windows: Vec<Window>,
         focused: Option<&Window>,
     ) -> Vec<Effect> {
@@ -136,11 +143,33 @@ impl Controller {
         };
 
         self.sessions += 1;
-        self.session = Some(Session::new(groups, &group, focused, &target.app));
+        self.session = Some(Session::new(
+            groups,
+            &group,
+            focused,
+            &target.app,
+            direction,
+        ));
 
         vec![Effect::ScheduleReveal {
             session: self.sessions,
         }]
+    }
+
+    /// Moves the highlight without changing application, for the keys that
+    /// only exist while a switch is in progress.
+    fn cycle(&mut self, direction: Direction) -> Vec<Effect> {
+        let Some(session) = &mut self.session else {
+            return vec![];
+        };
+
+        session.cycle(direction);
+
+        if self.shown {
+            vec![Effect::Highlight]
+        } else {
+            vec![]
+        }
     }
 
     fn reveal(&mut self, session: u64) -> Vec<Effect> {
@@ -201,8 +230,13 @@ mod tests {
     }
 
     fn trigger(app: &str) -> Event {
+        towards(app, Direction::Forward)
+    }
+
+    fn towards(app: &str, direction: Direction) -> Event {
         Event::Trigger {
             target: Target::new(app, None),
+            direction,
             windows: windows(),
             focused: None,
         }
@@ -307,6 +341,55 @@ mod tests {
         assert_eq!(
             controller.handle(Event::Confirm),
             [Effect::Hide, Effect::Focus(window("2", "brave-browser"))]
+        );
+    }
+
+    #[test]
+    fn shift_and_the_same_key_start_the_switch_at_the_other_end() {
+        let mut controller = Controller::default();
+
+        controller.handle(towards("ghostty", Direction::Backward));
+
+        assert_eq!(
+            controller.handle(Event::Confirm),
+            [Effect::Focus(window("3", "com.mitchellh.ghostty"))]
+        );
+    }
+
+    #[test]
+    fn the_next_and_previous_keys_move_the_highlight_both_ways() {
+        let mut controller = opened();
+
+        assert_eq!(
+            controller.handle(Event::Cycle {
+                direction: Direction::Forward
+            }),
+            [Effect::Highlight]
+        );
+        assert_eq!(
+            controller.handle(Event::Cycle {
+                direction: Direction::Backward
+            }),
+            [Effect::Highlight]
+        );
+        assert_eq!(
+            controller.handle(Event::Confirm),
+            [
+                Effect::Hide,
+                Effect::Focus(window("1", "com.mitchellh.ghostty"))
+            ]
+        );
+    }
+
+    #[test]
+    fn steering_keys_do_nothing_outside_a_switch() {
+        let mut controller = Controller::default();
+
+        assert_eq!(
+            controller.handle(Event::Cycle {
+                direction: Direction::Forward
+            }),
+            []
         );
     }
 

@@ -40,6 +40,13 @@ pub(crate) fn find_group<'a>(groups: &'a Groups, search: &str) -> Option<&'a str
         .map(String::as_str)
 }
 
+/// Which way through a group the highlight moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Direction {
+    Forward,
+    Backward,
+}
+
 /// One line of the switcher's list.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Row<'a> {
@@ -64,12 +71,19 @@ impl Session {
     /// `focused` is the window the compositor had focused when the session
     /// started, if any. `label` is the application as the user asked for it,
     /// e.g. `brave`, which reads better than the window class does.
+    /// `direction` is the way the user asked to go through the group.
     ///
     /// # Panics
     ///
     /// Panics if `group` isn't a non-empty group of `groups`.
-    pub(crate) fn new(groups: Groups, group: &str, focused: Option<&Window>, label: &str) -> Self {
-        let index = initial_index(&groups[group], focused);
+    pub(crate) fn new(
+        groups: Groups,
+        group: &str,
+        focused: Option<&Window>,
+        label: &str,
+        direction: Direction,
+    ) -> Self {
+        let index = initial_index(&groups[group], focused, direction);
 
         Self {
             groups,
@@ -94,21 +108,27 @@ impl Session {
         &self.groups[&self.group][self.index]
     }
 
-    /// Moves the highlight to the next window of the group, wrapping around.
-    pub(crate) fn cycle(&mut self) {
+    /// Moves the highlight one window along the group, wrapping around.
+    pub(crate) fn cycle(&mut self, direction: Direction) {
         let windows = &self.groups[&self.group];
-        self.index = (self.index + 1) % windows.len();
+        self.index = step(self.index, windows.len(), direction);
     }
 
     /// Points the session at another application's group, re-running the
     /// pre-selection rule. Cycles instead if it's the group already shown.
-    pub(crate) fn switch_to_group(&mut self, group: &str, focused: Option<&Window>, label: &str) {
+    pub(crate) fn switch_to_group(
+        &mut self,
+        group: &str,
+        focused: Option<&Window>,
+        label: &str,
+        direction: Direction,
+    ) {
         if group == self.group {
-            self.cycle();
+            self.cycle(direction);
             return;
         }
 
-        self.index = initial_index(&self.groups[group], focused);
+        self.index = initial_index(&self.groups[group], focused, direction);
         self.group = group.to_owned();
         self.label = label.to_owned();
     }
@@ -151,17 +171,31 @@ impl Session {
 
 /// Which window of `windows` starts out highlighted.
 ///
-/// Moving on from the focused window takes precedence: if it's one of
-/// `windows`, and there's somewhere else to go, the next window is highlighted.
-/// Otherwise the group's most recently used window is.
-fn initial_index(windows: &[Window], focused: Option<&Window>) -> usize {
+/// Moving off the focused window takes precedence: if it's one of `windows`,
+/// and there's somewhere else to go, its neighbour in `direction` is
+/// highlighted. Otherwise going forwards starts at the group's most recently
+/// used window and going backwards at its least recently used one, the way
+/// Alt-Tab and Alt-Shift-Tab start at opposite ends of the list.
+fn initial_index(windows: &[Window], focused: Option<&Window>, direction: Direction) -> usize {
     if windows.len() < 2 {
         return 0;
     }
 
     let focused_index = focused.and_then(|focused| windows.iter().position(|w| w == focused));
 
-    focused_index.map_or(0, |index| (index + 1) % windows.len())
+    match (focused_index, direction) {
+        (Some(index), direction) => step(index, windows.len(), direction),
+        (None, Direction::Forward) => 0,
+        (None, Direction::Backward) => windows.len() - 1,
+    }
+}
+
+/// One step along a list of `length` windows, wrapping at either end.
+fn step(index: usize, length: usize, direction: Direction) -> usize {
+    match direction {
+        Direction::Forward => (index + 1) % length,
+        Direction::Backward => (index + length - 1) % length,
+    }
 }
 
 #[cfg(test)]
@@ -187,7 +221,13 @@ mod tests {
 
     fn session(focused: Option<&Window>) -> Session {
         let groups = group_windows(windows());
-        Session::new(groups, "com.mitchellh.ghostty", focused, "ghostty")
+        Session::new(
+            groups,
+            "com.mitchellh.ghostty",
+            focused,
+            "ghostty",
+            Direction::Forward,
+        )
     }
 
     #[test]
@@ -251,11 +291,17 @@ mod tests {
     fn the_only_window_of_a_group_stays_highlighted() {
         let groups = group_windows(windows());
         let focused = window("2", "brave-browser", "Hyprland Wiki");
-        let mut session = Session::new(groups, "brave-browser", Some(&focused), "brave");
+        let mut session = Session::new(
+            groups,
+            "brave-browser",
+            Some(&focused),
+            "brave",
+            Direction::Forward,
+        );
 
         assert_eq!(session.selected_window().id, "2");
 
-        session.cycle();
+        session.cycle(Direction::Forward);
 
         assert_eq!(session.selected_window().id, "2");
     }
@@ -266,10 +312,10 @@ mod tests {
 
         assert_eq!(session.selected_window().id, "1");
 
-        session.cycle();
+        session.cycle(Direction::Forward);
         assert_eq!(session.selected_window().id, "3");
 
-        session.cycle();
+        session.cycle(Direction::Forward);
         assert_eq!(session.selected_window().id, "1");
     }
 
@@ -278,12 +324,17 @@ mod tests {
         let focused = window("1", "com.mitchellh.ghostty", "ghostty: raisin");
         let mut session = session(Some(&focused));
 
-        session.switch_to_group("brave-browser", Some(&focused), "brave");
+        session.switch_to_group("brave-browser", Some(&focused), "brave", Direction::Forward);
 
         assert_eq!(session.group(), "brave-browser");
         assert_eq!(session.selected_window().id, "2");
 
-        session.switch_to_group("com.mitchellh.ghostty", Some(&focused), "ghostty");
+        session.switch_to_group(
+            "com.mitchellh.ghostty",
+            Some(&focused),
+            "ghostty",
+            Direction::Forward,
+        );
 
         assert_eq!(session.selected_window().id, "3");
     }
@@ -292,9 +343,51 @@ mod tests {
     fn switching_to_the_group_already_shown_cycles_instead() {
         let mut session = session(None);
 
-        session.switch_to_group("com.mitchellh.ghostty", None, "ghostty");
+        session.switch_to_group("com.mitchellh.ghostty", None, "ghostty", Direction::Forward);
 
         assert_eq!(session.selected_window().id, "3");
+    }
+
+    #[test]
+    fn going_backwards_starts_at_the_least_recently_used_window() {
+        let groups = group_windows(windows());
+        let session = Session::new(
+            groups,
+            "com.mitchellh.ghostty",
+            None,
+            "ghostty",
+            Direction::Backward,
+        );
+
+        assert_eq!(session.selected_window().id, "3");
+    }
+
+    #[test]
+    fn going_backwards_from_a_focused_window_picks_the_one_before_it() {
+        let focused = window("1", "com.mitchellh.ghostty", "ghostty: raisin");
+        let groups = group_windows(windows());
+        let session = Session::new(
+            groups,
+            "com.mitchellh.ghostty",
+            Some(&focused),
+            "ghostty",
+            Direction::Backward,
+        );
+
+        assert_eq!(session.selected_window().id, "3");
+    }
+
+    #[test]
+    fn cycling_backwards_wraps_the_other_way() {
+        let mut session = session(None);
+
+        assert_eq!(session.selected_window().id, "1");
+
+        session.cycle(Direction::Backward);
+        assert_eq!(session.selected_window().id, "3");
+
+        session.cycle(Direction::Backward);
+        assert_eq!(session.selected_window().id, "1");
     }
 
     #[test]
@@ -329,7 +422,7 @@ mod tests {
 
         assert_eq!(session.selected_row(), 3);
 
-        session.cycle();
+        session.cycle(Direction::Forward);
 
         assert_eq!(session.selected_row(), 4);
     }

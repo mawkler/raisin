@@ -69,6 +69,12 @@ pub(crate) fn receive(stream: UnixStream) -> Option<Message> {
     let mut line = String::new();
     BufReader::new(stream).read_line(&mut line).ok()?;
 
+    // A daemon starting up connects and hangs up again to find out whether
+    // one is already running, which isn't worth a word.
+    if line.trim().is_empty() {
+        return None;
+    }
+
     match serde_json::from_str(&line) {
         Ok(message) => Some(message),
         Err(error) => {

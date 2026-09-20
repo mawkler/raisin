@@ -3,9 +3,9 @@ use clap::Parser;
 use crate::application::Application;
 
 mod application;
-mod bindings;
 mod cli;
 mod compositor;
+mod config;
 mod daemon;
 mod switcher;
 
@@ -13,7 +13,7 @@ fn main() -> anyhow::Result<()> {
     let args = cli::Args::parse();
 
     match args.command {
-        Some(cli::Command::Daemon) => daemon::run(),
+        Some(cli::Command::Daemon { config }) => daemon::run(config.as_deref()),
         Some(cli::Command::Switch { app, app_id }) => daemon::switch(&app, app_id.as_deref()),
         None => {
             let app = args

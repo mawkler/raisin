@@ -7,12 +7,8 @@ use gtk4::prelude::*;
 use gtk4::{gdk, pango};
 use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
 
+use crate::config;
 use crate::switcher::{Row, Session};
-
-/// How wide the panel is, and how much of the screen its list may take before
-/// it starts scrolling.
-const WIDTH: i32 = 460;
-const MAX_LIST_HEIGHT: i32 = 420;
 
 const STYLE: &str = "
 window.raisin,
@@ -88,7 +84,7 @@ pub(crate) struct Overlay {
 
 impl Overlay {
     /// Builds the window, ready to be put on screen later.
-    pub(crate) fn new() -> Result<Self> {
+    pub(crate) fn new(switcher: &config::Switcher, keys: &config::Keys) -> Result<Self> {
         load_style().context("failed to load the switcher's stylesheet")?;
 
         let window = gtk4::Window::new();
@@ -116,14 +112,14 @@ impl Overlay {
         scroll.set_child(Some(&list));
         scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         scroll.set_propagate_natural_height(true);
-        scroll.set_max_content_height(MAX_LIST_HEIGHT);
+        scroll.set_max_content_height(switcher.max_height);
 
         let panel = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         panel.add_css_class("panel");
-        panel.set_size_request(WIDTH, -1);
+        panel.set_size_request(switcher.width, -1);
         panel.append(&heading);
         panel.append(&scroll);
-        panel.append(&footer());
+        panel.append(&footer(keys));
 
         window.set_child(Some(&panel));
 
@@ -234,7 +230,7 @@ fn window_row(title: &str) -> gtk4::ListBoxRow {
     row
 }
 
-fn footer() -> gtk4::Box {
+fn footer(keys: &config::Keys) -> gtk4::Box {
     let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
     footer.add_css_class("footer");
 
@@ -251,8 +247,19 @@ fn footer() -> gtk4::Box {
 
     footer.append(&keycap("Super"));
     footer.append(&hint("release to switch"));
-    footer.append(&keycap("Esc"));
+
+    if let Some(next) = &keys.next {
+        footer.append(&keycap(&keycap_name(next)));
+        footer.append(&hint("next"));
+    }
+
+    footer.append(&keycap(&keycap_name(&keys.cancel)));
     footer.append(&hint("cancel"));
 
     footer
+}
+
+/// A key as it reads on a keycap rather than in a configuration file.
+fn keycap_name(key: &config::Key) -> String {
+    key.to_string().replace("Escape", "Esc")
 }
