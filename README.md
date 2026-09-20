@@ -33,8 +33,10 @@ adding another letter is a line of Rust and a restart — no compositor configur
   letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
   cancel.
 
-While the switcher runs it takes those keys over from your own configuration; `hyprctl reload`
-gives them back. Stopping it removes every binding it added.
+While the switcher runs it takes those letters over from your own configuration; `hyprctl reload`
+gives them back. `Super` and `Escape` are shared rather than taken over: a binding of your own on
+`Super` — a launcher on tap, say — keeps working, and Hyprland shadows it by itself while you're
+holding `Super` to pick a window.
 
 `raisin switch <app>` does the same thing from a keybinding of your own, and says so plainly if the
 switcher isn't running.

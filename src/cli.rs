@@ -33,9 +33,11 @@ pub(crate) enum Command {
     ///
     /// Start it once, for example from your Hyprland startup configuration.
     /// It binds Super + a letter for every application it knows about, taking
-    /// those keys over from any binding your configuration gives them, and
-    /// removes its own bindings again when it stops. `hyprctl reload` puts
-    /// your configuration's bindings back.
+    /// those letters over from your own configuration while it runs;
+    /// `hyprctl reload` gives them back.
+    ///
+    /// Super and Escape are shared rather than taken over, so your own
+    /// bindings on them keep working.
     Daemon,
 
     /// Switch to an application through the running switcher.
