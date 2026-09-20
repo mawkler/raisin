@@ -1,5 +1,5 @@
 {
-  description = "Run-or-raise for Niri and Hyprland";
+  description = "Run-or-raise for Hyprland";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -22,6 +22,13 @@
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+
+      # The switcher window is GTK 4 on the compositor's overlay layer.
+      guiInputs =
+        pkgs: with pkgs; [
+          gtk4
+          gtk4-layer-shell
+        ];
     in
     {
       packages = forAllSystems (system: {
@@ -30,7 +37,14 @@
             pkgs = import nixpkgs { inherit system; };
             naersk-lib = pkgs.callPackage naersk { };
           in
-          naersk-lib.buildPackage { src = ./.; };
+          naersk-lib.buildPackage {
+            src = ./.;
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              wrapGAppsHook4
+            ];
+            buildInputs = guiInputs pkgs;
+          };
       });
 
       apps = forAllSystems (system: {
@@ -47,13 +61,16 @@
         in
         {
           default = pkgs.mkShell {
-            buildInputs = with pkgs; [
-              cargo
-              rustc
-              rustfmt
-              pre-commit
-              rustPackages.clippy
-            ];
+            nativeBuildInputs = with pkgs; [ pkg-config ];
+            buildInputs =
+              (with pkgs; [
+                cargo
+                rustc
+                rustfmt
+                pre-commit
+                rustPackages.clippy
+              ])
+              ++ guiInputs pkgs;
             RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
           };
         }

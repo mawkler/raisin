@@ -14,6 +14,31 @@ Intended to be called from a compositor keybinding like so:
 
 Currently supports [Niri](https://github.com/YaLTeR/niri) and [Hyprland](https://hyprland.org), but has a small integration layer for adding support for more compositors in the future.
 
+## The switcher
+
+On Hyprland, raisin can show an Alt-Tab style overlay while you hold `Super`. Start it once, for
+example from your Hyprland startup configuration:
+
+```
+exec-once = raisin daemon
+```
+
+It binds `Super` + a letter for every application in the table at the top of `src/bindings.rs`, so
+adding another letter is a line of Rust and a restart — no compositor configuration to edit.
+
+- Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
+- Keep `Super` held a moment longer and the switcher appears: every open window, grouped by
+  application, with the one you'd get highlighted.
+- Press the same letter again to cycle through that application's windows, press another mapped
+  letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
+  cancel.
+
+While the switcher runs it takes those keys over from your own configuration; `hyprctl reload`
+gives them back. Stopping it removes every binding it added.
+
+`raisin switch <app>` does the same thing from a keybinding of your own, and says so plainly if the
+switcher isn't running.
+
 ## Run/install
 
 ### Run with Nix
@@ -27,9 +52,15 @@ Currently supports [Niri](https://github.com/YaLTeR/niri) and [Hyprland](https:/
 ## Usage
 
 ```help
-Run-or-raise for Niri and Hyprland
+Run-or-raise for Hyprland and Niri
 
 Usage: raisin <APP> [APP_ID]
+       raisin [APP] [APP_ID] <COMMAND>
+
+Commands:
+  daemon  Run the switcher. Hyprland only
+  switch  Switch to an application through the running switcher
+  help    Print this message or the help of the given subcommand(s)
 
 Arguments:
   <APP>
@@ -50,4 +81,5 @@ Options:
 Examples:
   raisin ghostty
   raisin ghostty com.mitchellh.ghostty
+  raisin daemon
 ```

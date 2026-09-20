@@ -10,7 +10,6 @@ pub(crate) mod integrations;
 pub(crate) struct Window {
     pub id: String,
     pub app_id: String,
-    #[allow(dead_code)]
     pub title: String,
 }
 

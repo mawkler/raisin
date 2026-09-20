@@ -1,31 +1,30 @@
 use anyhow::{Context, Result};
 
-use crate::cli;
 use crate::compositor::{ActiveCompositor, Compositor, Window};
 
 pub(crate) struct Application {
-    cli_arguments: cli::Args,
+    app: String,
+    app_id: Option<String>,
     compositor: ActiveCompositor,
 }
 
 impl Application {
-    pub(crate) fn new(cli_arguments: cli::Args, compositor: ActiveCompositor) -> Self {
+    pub(crate) fn new(compositor: ActiveCompositor, app: &str, app_id: Option<&str>) -> Self {
         Self {
-            cli_arguments,
+            app: app.to_owned(),
+            app_id: app_id.map(str::to_owned),
             compositor,
         }
     }
 
     pub(crate) fn run(&self) -> anyhow::Result<()> {
-        let args = &self.cli_arguments;
-
-        let search_string = args.app_id.as_deref().unwrap_or(&args.app).to_lowercase();
+        let search_string = self.app_id.as_deref().unwrap_or(&self.app).to_lowercase();
         let sibling_windows = self
             .get_window_group(&search_string)
             .context("failed to get window group")?;
 
         if sibling_windows.is_empty() {
-            self.compositor.launch_application(&args.app)?;
+            self.compositor.launch_application(&self.app)?;
             return Ok(());
         }
 
