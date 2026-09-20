@@ -37,6 +37,12 @@ pub(crate) struct Config {
 }
 
 impl Config {
+    /// The file [`Self::load`] reads, which is also the file to watch for
+    /// changes.
+    pub(crate) fn path(explicit: Option<&Path>) -> Option<PathBuf> {
+        explicit.map(Path::to_owned).or_else(default_path)
+    }
+
     /// Reads the configuration, falling back to the defaults when there isn't
     /// one to read.
     ///
@@ -45,12 +51,9 @@ impl Config {
     /// Returns an error if `path` was given but can't be read, or if the file
     /// doesn't parse.
     pub(crate) fn load(path: Option<&Path>) -> Result<Self> {
-        let (path, required) = match path {
-            Some(path) => (Some(path.to_owned()), true),
-            None => (default_path(), false),
-        };
+        let required = path.is_some();
 
-        let Some(path) = path else {
+        let Some(path) = Self::path(path) else {
             return Ok(Self::default());
         };
 

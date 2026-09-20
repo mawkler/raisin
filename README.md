@@ -72,7 +72,10 @@ You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Supe
 Holding `Shift` with an application's letter walks its windows the other way, the way Alt-Shift-Tab
 does. That needs no configuration.
 
-A setting the file misspells is an error at startup rather than a line that quietly does nothing.
+Saving the file is enough: raisin watches it and rebinds straight away, ending any switch that was
+in progress under the old keys. A setting the file misspells is an error — at startup it stops the
+daemon, and on a reload it leaves the running configuration alone and says what was wrong, since a
+half-saved file is a normal thing for an editor to leave behind for a moment.
 
 ## Run/install
 

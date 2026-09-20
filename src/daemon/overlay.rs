@@ -80,6 +80,9 @@ pub(crate) struct Overlay {
     heading: gtk4::Label,
     list: gtk4::ListBox,
     selected: RefCell<Option<gtk4::ListBoxRow>>,
+    panel: gtk4::Box,
+    scroll: gtk4::ScrolledWindow,
+    footer: RefCell<gtk4::Box>,
 }
 
 impl Overlay {
@@ -114,12 +117,14 @@ impl Overlay {
         scroll.set_propagate_natural_height(true);
         scroll.set_max_content_height(switcher.max_height);
 
+        let footer = footer(keys);
+
         let panel = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         panel.add_css_class("panel");
         panel.set_size_request(switcher.width, -1);
         panel.append(&heading);
         panel.append(&scroll);
-        panel.append(&footer(keys));
+        panel.append(&footer);
 
         window.set_child(Some(&panel));
 
@@ -128,7 +133,22 @@ impl Overlay {
             heading,
             list,
             selected: RefCell::new(None),
+            panel,
+            scroll,
+            footer: RefCell::new(footer),
         })
+    }
+
+    /// Takes on a configuration that changed while the daemon was running.
+    pub(crate) fn reconfigure(&self, switcher: &config::Switcher, keys: &config::Keys) {
+        self.panel.set_size_request(switcher.width, -1);
+        self.scroll.set_max_content_height(switcher.max_height);
+
+        // The footer names the keys, so it's rebuilt rather than edited.
+        let footer = footer(keys);
+        self.panel.remove(&*self.footer.borrow());
+        self.panel.append(&footer);
+        self.footer.replace(footer);
     }
 
     /// Lists every open window, grouped, with the switch's application named

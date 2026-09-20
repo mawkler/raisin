@@ -6,11 +6,13 @@ mod ipc;
 mod overlay;
 
 use std::cell::RefCell;
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use gtk4::glib;
@@ -26,14 +28,20 @@ use overlay::Overlay;
 
 pub(crate) use ipc::switch;
 
+/// How long to let a configuration file settle before reading it. Editors
+/// write, rename and truncate in quick succession, and raisin would rather
+/// read the result once than read half of it three times.
+const SETTLE: Duration = Duration::from_millis(60);
+
 /// Runs the switcher until it's asked to stop.
 ///
 /// # Errors
 ///
 /// Returns an error if Hyprland isn't running, if another daemon already is,
 /// or if GTK, the window or the keybinds couldn't be set up.
-pub(crate) fn run(config: Option<&Path>) -> Result<()> {
-    let config = Rc::new(Config::load(config)?);
+pub(crate) fn run(path: Option<&Path>) -> Result<()> {
+    let config_path = Config::path(path);
+    let config = Rc::new(Config::load(path)?);
     let compositor = hyprland::Compositor;
 
     anyhow::ensure!(
@@ -55,20 +63,26 @@ pub(crate) fn run(config: Option<&Path>) -> Result<()> {
         overlay: Overlay::new(&config.switcher, &config.keys)
             .context("failed to build the switcher window")?,
         compositor,
-        binds: Rc::clone(&binds),
-        config: Rc::clone(&config),
+        binds: RefCell::new(binds),
+        config: RefCell::new(config),
+        config_path: config_path.clone(),
     });
 
     let main_loop = glib::MainLoop::new(None, false);
 
     watch_hyprland(&daemon, &main_loop)?;
     watch_clients(&daemon, instance.listener())?;
+
+    if let Some(path) = &config_path {
+        watch_config(&daemon, path);
+    }
+
     quit_on_signal(&main_loop)?;
 
     main_loop.run();
 
     // Leave Hyprland the way it was found.
-    binds.remove();
+    daemon.binds().remove();
     drop(instance);
 
     Ok(())
@@ -78,11 +92,60 @@ struct Daemon {
     controller: RefCell<Controller>,
     overlay: Overlay,
     compositor: hyprland::Compositor,
-    binds: Rc<Binds>,
-    config: Rc<Config>,
+    binds: RefCell<Rc<Binds>>,
+    config: RefCell<Rc<Config>>,
+    config_path: Option<PathBuf>,
 }
 
 impl Daemon {
+    fn config(&self) -> Rc<Config> {
+        Rc::clone(&self.config.borrow())
+    }
+
+    fn binds(&self) -> Rc<Binds> {
+        Rc::clone(&self.binds.borrow())
+    }
+
+    /// Reads the configuration file again and takes on what changed.
+    ///
+    /// A file that doesn't parse leaves the daemon exactly as it was, since a
+    /// half-saved file is a normal thing for an editor to leave behind for a
+    /// moment.
+    fn reload(self: &Rc<Self>) {
+        let config = match Config::load(self.config_path.as_deref()) {
+            Ok(config) => Rc::new(config),
+            Err(error) => {
+                eprintln!("raisin: keeping the configuration it had: {error:#}");
+                return;
+            }
+        };
+
+        // A switch in progress was started under the old keys, so it ends here
+        // rather than half under each.
+        self.handle(Event::Cancel);
+
+        let previous = self.binds();
+        previous.remove();
+
+        match Binds::install(&config) {
+            Ok(binds) => {
+                self.overlay.reconfigure(&config.switcher, &config.keys);
+                self.binds.replace(Rc::new(binds));
+                self.config.replace(config);
+            }
+            Err(error) => {
+                eprintln!("raisin: the new configuration's keybinds were refused: {error:#}");
+
+                // Put back the ones that were working.
+                match Binds::install(&self.config()) {
+                    Ok(binds) => {
+                        self.binds.replace(Rc::new(binds));
+                    }
+                    Err(error) => eprintln!("raisin: and its own keybinds are gone too: {error:#}"),
+                }
+            }
+        }
+    }
     fn handle(self: &Rc<Self>, event: Event) {
         let effects = self.controller.borrow_mut().handle(event);
 
@@ -96,7 +159,7 @@ impl Daemon {
             Effect::ScheduleReveal { session } => {
                 let daemon = Rc::clone(self);
 
-                glib::timeout_add_local_once(self.config.switcher.delay(), move || {
+                glib::timeout_add_local_once(self.config().switcher.delay(), move || {
                     daemon.handle(Event::Reveal { session });
                 });
             }
@@ -112,11 +175,11 @@ impl Daemon {
             }
             Effect::Show => {
                 self.overlay.show();
-                self.binds.capture_session_keys();
+                self.binds().capture_session_keys();
             }
             Effect::Hide => {
                 self.overlay.hide();
-                self.binds.release_session_keys();
+                self.binds().release_session_keys();
             }
             Effect::Focus(window) => {
                 if let Err(error) = self.compositor.focus_window(&window) {
@@ -218,10 +281,11 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
             let Some((key, direction)) = pressed else {
                 return;
             };
+            let config = daemon.config();
             let Some(target) = key
                 .chars()
                 .next()
-                .and_then(|key| daemon.config.target(key))
+                .and_then(|key| config.target(key))
                 .cloned()
             else {
                 return;
@@ -230,7 +294,7 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
             daemon.trigger(target, direction);
         }
         // A reload wipes keybinds that were added over IPC.
-        "configreloaded" => daemon.binds.reinstall(),
+        "configreloaded" => daemon.binds().reinstall(),
         _ => {}
     }
 }
@@ -268,6 +332,69 @@ fn watch_clients(daemon: &Rc<Daemon>, listener: &UnixListener) -> Result<()> {
     });
 
     Ok(())
+}
+
+/// Watches the configuration file, so that saving it is all it takes for the
+/// change to be in effect.
+fn watch_config(daemon: &Rc<Daemon>, path: &Path) {
+    let (Some(directory), Some(name)) = (path.parent(), path.file_name().map(OsString::from))
+    else {
+        return;
+    };
+
+    let mut inotify = match inotify::Inotify::init() {
+        Ok(inotify) => inotify,
+        Err(error) => {
+            eprintln!("raisin: not watching {}: {error}", path.display());
+            return;
+        }
+    };
+
+    // The directory rather than the file: an editor saves by writing a new
+    // file and renaming it over the old one, which leaves a watch on the file
+    // itself pointing at something nobody will write to again.
+    let watching = inotify.watches().add(
+        directory,
+        inotify::WatchMask::CLOSE_WRITE | inotify::WatchMask::MOVED_TO | inotify::WatchMask::CREATE,
+    );
+
+    if let Err(error) = watching {
+        eprintln!("raisin: not watching {}: {error}", directory.display());
+        return;
+    }
+
+    let (sender, receiver) = async_channel::unbounded();
+
+    thread::spawn(move || {
+        let mut buffer = [0; 4096];
+
+        loop {
+            let Ok(mut events) = inotify.read_events_blocking(&mut buffer) else {
+                break;
+            };
+
+            if !events.any(|event| event.name == Some(&name)) {
+                continue;
+            }
+
+            // Let the rest of the editor's writing land, and read it once.
+            thread::sleep(SETTLE);
+            let mut settled = [0; 4096];
+            let _ = inotify.read_events(&mut settled);
+
+            if sender.send_blocking(()).is_err() {
+                break;
+            }
+        }
+    });
+
+    let daemon = Rc::clone(daemon);
+
+    glib::MainContext::default().spawn_local(async move {
+        while receiver.recv().await.is_ok() {
+            daemon.reload();
+        }
+    });
 }
 
 /// Stops on the signals a service manager stops things with, so the keybinds
