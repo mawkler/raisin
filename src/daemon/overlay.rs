@@ -128,6 +128,13 @@ impl Overlay {
 
         window.set_child(Some(&panel));
 
+        // Building the renderer costs a few hundred milliseconds, and paying
+        // it on the first switch would hold up the main loop just as the user
+        // lets go of Super. Realising the window does that work now: it builds
+        // the surface and its renderer without putting anything on screen,
+        // which only happens once something is drawn into it.
+        gtk4::prelude::WidgetExt::realize(&window);
+
         Ok(Self {
             window,
             heading,
