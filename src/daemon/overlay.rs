@@ -12,6 +12,9 @@ use crate::config;
 use crate::preview::{RATIO, Thumbnail};
 use crate::switcher::{Row, Session};
 
+/// How big an application's icon is beside its name.
+const ICON_SIZE: i32 = 16;
+
 const STYLE: &str = "
 window.raisin,
 window.raisin > widget {
@@ -95,6 +98,7 @@ pub(crate) struct Overlay {
     /// identifier the capture comes back with.
     thumbnails: RefCell<HashMap<String, gtk4::Picture>>,
     previews: Cell<config::Previews>,
+    icons: Cell<bool>,
 }
 
 impl Overlay {
@@ -161,6 +165,7 @@ impl Overlay {
             footer: RefCell::new(footer),
             thumbnails: RefCell::new(HashMap::new()),
             previews: Cell::new(*previews),
+            icons: Cell::new(switcher.icons),
         })
     }
 
@@ -174,6 +179,7 @@ impl Overlay {
         self.panel.set_size_request(switcher.width, -1);
         self.scroll.set_max_content_height(switcher.max_height);
         self.previews.set(*previews);
+        self.icons.set(switcher.icons);
 
         // The footer names the keys, so it's rebuilt rather than edited.
         let footer = footer(keys);
@@ -205,7 +211,7 @@ impl Overlay {
             match row {
                 Row::Group(name) => {
                     group = name;
-                    self.list.append(&group_row(name));
+                    self.list.append(&group_row(name, self.icons.get()));
                 }
                 // A window without a title is better named by its
                 // application than by an empty row.
@@ -302,17 +308,46 @@ fn line(label: &gtk4::Label) {
     label.set_ellipsize(pango::EllipsizeMode::End);
 }
 
-fn group_row(name: &str) -> gtk4::ListBoxRow {
+fn group_row(name: &str, icons: bool) -> gtk4::ListBoxRow {
     let label = gtk4::Label::new(Some(&name.to_uppercase()));
     label.add_css_class("group");
     line(&label);
 
+    let contents = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    contents.add_css_class("group-row");
+
+    if let Some(icon) = icons.then(|| app_icon(name)).flatten() {
+        contents.append(&icon);
+    }
+
+    contents.append(&label);
+
     let row = gtk4::ListBoxRow::new();
-    row.set_child(Some(&label));
+    row.set_child(Some(&contents));
     row.set_focusable(false);
     row.set_activatable(false);
 
     row
+}
+
+/// The application's own icon, if the icon theme has one under a name the
+/// window class suggests.
+fn app_icon(app_id: &str) -> Option<gtk4::Image> {
+    let theme = gtk4::IconTheme::for_display(&gdk::Display::default()?);
+    let last = app_id.rsplit('.').next().unwrap_or(app_id);
+    let candidates = [
+        app_id.to_owned(),
+        app_id.to_lowercase(),
+        last.to_owned(),
+        last.to_lowercase(),
+    ];
+
+    let name = candidates.iter().find(|name| theme.has_icon(name))?;
+    let icon = gtk4::Image::from_icon_name(name);
+    icon.add_css_class("app-icon");
+    icon.set_pixel_size(ICON_SIZE);
+
+    Some(icon)
 }
 
 /// A window's row, with room for its thumbnail when `preview` says how wide

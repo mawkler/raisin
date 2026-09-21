@@ -232,6 +232,9 @@ pub(crate) struct Switcher {
     /// How tall its list may grow, in pixels, before it starts scrolling.
     #[serde(default = "default_max_height")]
     pub(crate) max_height: i32,
+    /// Whether to show each application's icon beside its name.
+    #[serde(default = "enabled")]
+    pub(crate) icons: bool,
 }
 
 impl Switcher {
@@ -246,6 +249,7 @@ impl Default for Switcher {
             delay: default_delay(),
             width: default_width(),
             max_height: default_max_height(),
+            icons: enabled(),
         }
     }
 }
@@ -418,6 +422,7 @@ mod tests {
 
         assert!(!config.previews.enabled);
         assert_eq!(config.previews.width, default_preview_width());
+        assert!(config.switcher.icons);
     }
 
     #[test]

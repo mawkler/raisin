@@ -66,6 +66,7 @@ cancel = "Escape"         # close without switching
 delay = 90        # milliseconds Super has to stay held before the switcher appears
 width = 460       # pixels
 max_height = 420  # pixels; the list scrolls once it would grow past this
+icons = true      # show each application's icon beside its name
 
 [previews]
 enabled = true    # show what each window looks like
