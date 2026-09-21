@@ -217,6 +217,7 @@ mod tests {
             id: id.to_owned(),
             app_id: app_id.to_owned(),
             title: format!("{app_id} {id}"),
+            identifier: id.to_owned(),
         }
     }
 

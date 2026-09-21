@@ -11,6 +11,10 @@ pub(crate) struct Window {
     pub id: String,
     pub app_id: String,
     pub title: String,
+    /// What the window is called by the Wayland protocols that capture it,
+    /// which is not what the compositor's own IPC calls it. Empty when the
+    /// compositor doesn't offer one, which means no preview for this window.
+    pub identifier: String,
 }
 
 impl PartialEq for Window {

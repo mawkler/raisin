@@ -34,6 +34,9 @@ pub(crate) struct Config {
     /// How the switcher behaves and how big it is.
     #[serde(default)]
     pub(crate) switcher: Switcher,
+    /// The thumbnails of the windows being switched between.
+    #[serde(default)]
+    pub(crate) previews: Previews,
 }
 
 impl Config {
@@ -82,6 +85,7 @@ impl Default for Config {
             apps: default_apps(),
             keys: Keys::default(),
             switcher: Switcher::default(),
+            previews: Previews::default(),
         }
     }
 }
@@ -246,6 +250,28 @@ impl Default for Switcher {
     }
 }
 
+/// Thumbnails of the windows of the application being switched to.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Previews {
+    /// Whether to capture them at all.
+    #[serde(default = "enabled")]
+    pub(crate) enabled: bool,
+    /// How wide a thumbnail is, in pixels. Its height follows the window's
+    /// own proportions.
+    #[serde(default = "default_preview_width")]
+    pub(crate) width: u32,
+}
+
+impl Default for Previews {
+    fn default() -> Self {
+        Self {
+            enabled: enabled(),
+            width: default_preview_width(),
+        }
+    }
+}
+
 /// The applications raisin knows about with no configuration file to read.
 fn default_apps() -> BTreeMap<char, Target> {
     [
@@ -274,6 +300,14 @@ fn default_width() -> i32 {
 
 fn default_max_height() -> i32 {
     420
+}
+
+fn enabled() -> bool {
+    true
+}
+
+fn default_preview_width() -> u32 {
+    168
 }
 
 #[cfg(test)]
@@ -371,6 +405,19 @@ mod tests {
         .expect_err("unknown fields should be refused");
 
         assert!(error.to_string().contains("dealy"), "{error}");
+    }
+
+    #[test]
+    fn previews_can_be_turned_off_without_touching_anything_else() {
+        let config = config(
+            r#"
+            [previews]
+            enabled = false
+            "#,
+        );
+
+        assert!(!config.previews.enabled);
+        assert_eq!(config.previews.width, default_preview_width());
     }
 
     #[test]

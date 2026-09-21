@@ -47,6 +47,7 @@ impl compositor::Compositor for Compositor {
             id: window.id.to_string(),
             app_id: window.app_id,
             title: window.title,
+            identifier: String::new(),
         }))
     }
 
@@ -68,6 +69,7 @@ impl compositor::Compositor for Compositor {
                 id: window.id.to_string(),
                 app_id: window.app_id,
                 title: window.title,
+                identifier: String::new(),
             })
             .collect();
 

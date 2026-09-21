@@ -7,6 +7,7 @@ mod cli;
 mod compositor;
 mod config;
 mod daemon;
+mod preview;
 mod switcher;
 
 fn main() -> anyhow::Result<()> {

@@ -28,7 +28,8 @@ adding another letter is a line of Rust and a restart — no compositor configur
 
 - Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
 - Keep `Super` held a moment longer and the switcher appears: every open window, grouped by
-  application, with the one you'd get highlighted.
+  application, with the one you'd get highlighted. The windows you're choosing between show what
+  they currently look like.
 - Press the same letter again to cycle through that application's windows, press another mapped
   letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
   cancel.
@@ -65,6 +66,10 @@ cancel = "Escape"         # close without switching
 delay = 90        # milliseconds Super has to stay held before the switcher appears
 width = 460       # pixels
 max_height = 420  # pixels; the list scrolls once it would grow past this
+
+[previews]
+enabled = true    # show what each window looks like
+width = 168       # pixels wide; the height follows the window's own proportions
 ```
 
 You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Super and Tab.

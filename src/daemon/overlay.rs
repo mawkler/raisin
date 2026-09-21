@@ -1,13 +1,15 @@
 //! The switcher window: a small dark panel, centred, above everything else.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use gtk4::prelude::*;
-use gtk4::{gdk, pango};
+use gtk4::{gdk, glib, pango};
 use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
 
 use crate::config;
+use crate::preview::{RATIO, Thumbnail};
 use crate::switcher::{Row, Session};
 
 const STYLE: &str = "
@@ -52,6 +54,12 @@ list > row {
     border-radius: 10px;
 }
 
+.thumbnail {
+    border: 1px solid alpha(#ffffff, 0.10);
+    border-radius: 6px;
+    background-color: alpha(#000000, 0.25);
+}
+
 list > row.selected {
     color: #ffffff;
     background-color: alpha(#6b8cff, 0.22);
@@ -83,11 +91,19 @@ pub(crate) struct Overlay {
     panel: gtk4::Box,
     scroll: gtk4::ScrolledWindow,
     footer: RefCell<gtk4::Box>,
+    /// Where each window's thumbnail goes once it has been captured, by the
+    /// identifier the capture comes back with.
+    thumbnails: RefCell<HashMap<String, gtk4::Picture>>,
+    previews: Cell<config::Previews>,
 }
 
 impl Overlay {
     /// Builds the window, ready to be put on screen later.
-    pub(crate) fn new(switcher: &config::Switcher, keys: &config::Keys) -> Result<Self> {
+    pub(crate) fn new(
+        switcher: &config::Switcher,
+        keys: &config::Keys,
+        previews: &config::Previews,
+    ) -> Result<Self> {
         load_style().context("failed to load the switcher's stylesheet")?;
 
         let window = gtk4::Window::new();
@@ -143,13 +159,21 @@ impl Overlay {
             panel,
             scroll,
             footer: RefCell::new(footer),
+            thumbnails: RefCell::new(HashMap::new()),
+            previews: Cell::new(*previews),
         })
     }
 
     /// Takes on a configuration that changed while the daemon was running.
-    pub(crate) fn reconfigure(&self, switcher: &config::Switcher, keys: &config::Keys) {
+    pub(crate) fn reconfigure(
+        &self,
+        switcher: &config::Switcher,
+        keys: &config::Keys,
+        previews: &config::Previews,
+    ) {
         self.panel.set_size_request(switcher.width, -1);
         self.scroll.set_max_content_height(switcher.max_height);
+        self.previews.set(*previews);
 
         // The footer names the keys, so it's rebuilt rather than edited.
         let footer = footer(keys);
@@ -160,6 +184,10 @@ impl Overlay {
 
     /// Lists every open window, grouped, with the switch's application named
     /// at the top.
+    ///
+    /// Only the windows being switched between get a thumbnail: they're the
+    /// ones the user is choosing among, and giving every group one would make
+    /// the panel taller than the screen.
     pub(crate) fn fill(&self, session: &Session) {
         self.heading
             .set_text(&format!("Switch to {}", session.label()));
@@ -168,19 +196,60 @@ impl Overlay {
             self.list.remove(&row);
         }
         self.selected.replace(None);
+        self.thumbnails.borrow_mut().clear();
+
+        let previews = self.previews.get();
+        let mut group = "";
 
         for row in session.rows() {
-            self.list.append(&match row {
-                Row::Group(name) => group_row(name),
+            match row {
+                Row::Group(name) => {
+                    group = name;
+                    self.list.append(&group_row(name));
+                }
                 // A window without a title is better named by its
                 // application than by an empty row.
-                Row::Window { window, .. } => window_row(if window.title.is_empty() {
-                    &window.app_id
-                } else {
-                    &window.title
-                }),
-            });
+                Row::Window { window, .. } => {
+                    let title = if window.title.is_empty() {
+                        &window.app_id
+                    } else {
+                        &window.title
+                    };
+                    let previewed = previews.enabled
+                        && group == session.group()
+                        && !window.identifier.is_empty();
+
+                    let (row, thumbnail) = window_row(title, previewed.then_some(previews.width));
+
+                    if let Some(thumbnail) = thumbnail {
+                        self.thumbnails
+                            .borrow_mut()
+                            .insert(window.identifier.clone(), thumbnail);
+                    }
+
+                    self.list.append(&row);
+                }
+            }
         }
+    }
+
+    /// Puts a captured window into the row waiting for it, if that row is
+    /// still on screen.
+    pub(crate) fn set_thumbnail(&self, thumbnail: &Thumbnail) {
+        let Some(picture) = self.thumbnails.borrow().get(&thumbnail.identifier).cloned() else {
+            return;
+        };
+
+        let pixels = glib::Bytes::from_owned(thumbnail.pixels.clone());
+        let texture = gdk::MemoryTexture::new(
+            thumbnail.width as i32,
+            thumbnail.height as i32,
+            gdk::MemoryFormat::B8g8r8a8Premultiplied,
+            &pixels,
+            thumbnail.width as usize * 4,
+        );
+
+        picture.set_paintable(Some(&texture));
     }
 
     /// Marks the window that a release of Super would focus, scrolling it into
@@ -246,15 +315,44 @@ fn group_row(name: &str) -> gtk4::ListBoxRow {
     row
 }
 
-fn window_row(title: &str) -> gtk4::ListBoxRow {
+/// A window's row, with room for its thumbnail when `preview` says how wide
+/// one should be. The room is made now rather than when the capture arrives,
+/// so that rows don't jump about as thumbnails turn up.
+fn window_row(title: &str, preview: Option<u32>) -> (gtk4::ListBoxRow, Option<gtk4::Picture>) {
     let label = gtk4::Label::new(Some(title));
     line(&label);
 
     let row = gtk4::ListBoxRow::new();
-    row.set_child(Some(&label));
     row.set_activatable(false);
 
-    row
+    let Some(width) = preview else {
+        row.set_child(Some(&label));
+
+        return (row, None);
+    };
+
+    let picture = gtk4::Picture::new();
+    picture.set_content_fit(gtk4::ContentFit::Contain);
+    picture.set_halign(gtk4::Align::Center);
+    picture.set_valign(gtk4::Align::Center);
+
+    // The room for the thumbnail is the box, not the thumbnail itself. It is
+    // there before any capture arrives, so rows don't jump about as they turn
+    // up, and it keeps every row the same height whatever shape the window is:
+    // the picture draws at its own size inside it rather than stretching.
+    let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    frame.add_css_class("thumbnail");
+    frame.set_size_request(width as i32, (width as f32 / RATIO) as i32);
+    frame.set_halign(gtk4::Align::Start);
+    frame.set_valign(gtk4::Align::Center);
+    frame.append(&picture);
+
+    let contents = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+    contents.append(&frame);
+    contents.append(&label);
+    row.set_child(Some(&contents));
+
+    (row, Some(picture))
 }
 
 fn footer(keys: &config::Keys) -> gtk4::Box {

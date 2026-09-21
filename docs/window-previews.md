@@ -1,7 +1,11 @@
 # Window previews
 
-A plan for showing what each window actually looks like in the switcher, rather than only its
-title. Nothing here is implemented yet.
+How the switcher shows what each window actually looks like, rather than only its title.
+
+This started as a plan and is now mostly built: the standard capture protocols, on a thread of
+their own, feeding thumbnails into the rows of the application being switched to. What is still
+only planned is called out at the bottom. The survey and the protocol notes are kept because they
+are the reasoning behind what was built.
 
 ## What it has to leave alone
 
@@ -98,29 +102,41 @@ src/daemon/overlay.rs        a GdkTexture per row, placeholder until one arrives
 | XWayland windows | Expected to work through the same path; worth an explicit test, since XWayland surfaces have bitten screencopy implementations before. |
 | A huge window, or many at once | Cap concurrent captures, capture only the group being shown, and prefer dmabuf. |
 
-## Milestones
+## What was built
 
-1. **Spike, outside raisin.** A ~150-line binary that binds `ext-foreign-toplevel-list-v1`, picks a
-   toplevel by identifier, captures one frame through `ext-image-copy-capture-v1` and writes a PNG.
-   Answers the questions no amount of reading settles: how long a capture takes, what a window on
-   another workspace comes back as, and whether XWayland behaves.
-2. **Textures into the overlay.** The thread, the channel, `MemoryTexture`, and a row that shows a
-   thumbnail when one arrives and a placeholder when it doesn't.
-3. **Wire to the session.** Capture on reveal, re-target on group change, cancel on end — with a
-   test that a fast tap produces no capture requests at all.
-4. **dmabuf**, if the copies show up in a profile.
-5. **The fallback** for older Hyprland, behind the same trait, plus `[previews]` configuration:
-   on/off, thumbnail size, and how many to capture at once.
+`src/preview/capture.rs` is the Wayland client: it binds the three protocols above, keeps every
+window the compositor lists by its identifier, and captures one into shared memory on demand.
+`src/preview/mod.rs` runs it on a thread, takes requests over a channel and sends thumbnails back,
+and scales each capture down — averaging the pixels that fall into each one, so a window full of
+text doesn't come back as noise.
 
-Milestones 1–3 are verifiable in the nested Hyprland the switcher is already tested in, with `grim`
-for the screenshots.
+The daemon asks for thumbnails in `Effect::Fill`, which the state machine only emits once the
+switcher is on screen. A tap quick enough to skip the overlay therefore captures nothing, and that
+is a property of the controller's tests rather than of timing.
+
+Thumbnails are bounded in both directions, so a portrait window doesn't make its row three times
+the height of the others, and each is captured at the size it is shown at: a `GtkPicture` asks for
+as much room as its texture is wide, so a larger capture would stretch the panel rather than sharpen
+the picture.
+
+Verified in a nested Hyprland with `grim`: three terminals captured into their rows, a fast tap that
+switched in 4 ms with no overlay and no captures, and a confirm that focused its window 2 ms after
+Super came up while captures were in flight.
+
+## Still only planned
+
+- **dmabuf.** Everything goes through shared memory and a CPU downscale today. On a 4K window that
+  is a 33 MB read per capture, on a thread of its own, which has not been worth avoiding yet.
+- **The fallback** to `hyprland-toplevel-export-v1` for Hyprland older than the standard protocols.
+  The trait boundary is there; the second implementation is not.
+- **Capturing the whole list** rather than the group being switched between, which would make
+  swapping application instant at proportionally more cost.
+- **XWayland**, which should work through the same path but has not been tried.
 
 ## Open questions
 
-- **Layout.** Thumbnails turn a compact list into something much taller. A row of thumbnails for
-  the targeted group above the grouped list would keep the list honest and the window small, but it
-  means two ways of showing the same thing. Worth a sketch before any of the code.
-- **Whether to capture the whole list or only the targeted group.** Only the group keeps the cost
-  proportional; the whole list makes swapping applications instant.
+- **Layout.** Settled for now by giving thumbnails only to the group being switched between, which
+  keeps the panel the size it was for every other group. A strip of thumbnails above the list is
+  still the other option if the rows start to feel tall.
 - **Whether previews should survive a session**, cached by identifier, so the second switch in a row
   is populated immediately. Cheap, but a stale thumbnail is worse than no thumbnail.

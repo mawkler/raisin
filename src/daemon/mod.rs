@@ -22,6 +22,7 @@ use crate::compositor::integrations::hyprland::{
     self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, NEXT_EVENT, PREVIOUS_EVENT, SWITCH_EVENT,
 };
 use crate::config::{Config, Target};
+use crate::preview::{Previews, Thumbnail};
 use crate::switcher::Direction;
 use controller::{Controller, Effect, Event};
 use overlay::Overlay;
@@ -58,20 +59,24 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
     let binds =
         Rc::new(Binds::install(&config).context("failed to install raisin's Hyprland keybinds")?);
 
+    let (previews, thumbnails) = Previews::start();
+
     let daemon = Rc::new(Daemon {
         controller: RefCell::new(Controller::default()),
-        overlay: Overlay::new(&config.switcher, &config.keys)
+        overlay: Overlay::new(&config.switcher, &config.keys, &config.previews)
             .context("failed to build the switcher window")?,
         compositor,
         binds: RefCell::new(binds),
         config: RefCell::new(config),
         config_path: config_path.clone(),
+        previews,
     });
 
     let main_loop = glib::MainLoop::new(None, false);
 
     watch_hyprland(&daemon, &main_loop)?;
     watch_clients(&daemon, instance.listener())?;
+    watch_thumbnails(&daemon, thumbnails);
 
     if let Some(path) = &config_path {
         watch_config(&daemon, path);
@@ -95,6 +100,7 @@ struct Daemon {
     binds: RefCell<Rc<Binds>>,
     config: RefCell<Rc<Config>>,
     config_path: Option<PathBuf>,
+    previews: Previews,
 }
 
 impl Daemon {
@@ -129,7 +135,8 @@ impl Daemon {
 
         match Binds::install(&config) {
             Ok(binds) => {
-                self.overlay.reconfigure(&config.switcher, &config.keys);
+                self.overlay
+                    .reconfigure(&config.switcher, &config.keys, &config.previews);
                 self.binds.replace(Rc::new(binds));
                 self.config.replace(config);
             }
@@ -164,8 +171,33 @@ impl Daemon {
                 });
             }
             Effect::Fill => {
-                if let Some(session) = self.controller.borrow().session() {
-                    self.overlay.fill(session);
+                let Some(config) = self.filled() else {
+                    return;
+                };
+
+                // Capturing starts here rather than when the key was pressed:
+                // Fill only happens once the switcher is actually on screen,
+                // so a tap quick enough to skip it captures nothing at all.
+                if config.previews.enabled {
+                    let identifiers = self
+                        .controller
+                        .borrow()
+                        .session()
+                        .map(|session| {
+                            session
+                                .group_windows()
+                                .iter()
+                                .map(|window| window.identifier.clone())
+                                .filter(|identifier| !identifier.is_empty())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    // Captured at the size it will be shown at: a picture
+                    // asks for as much room as its texture is wide, so a
+                    // larger one would stretch the panel rather than sharpen
+                    // the thumbnail.
+                    self.previews.capture(identifiers, config.previews.width);
                 }
             }
             Effect::Highlight => {
@@ -180,6 +212,7 @@ impl Daemon {
             Effect::Hide => {
                 self.overlay.hide();
                 self.binds().release_session_keys();
+                self.previews.cancel();
             }
             Effect::Focus(window) => {
                 if let Err(error) = self.compositor.focus_window(&window) {
@@ -192,6 +225,17 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    /// Fills the overlay from the switch in progress, and says what the
+    /// configuration is while it's at it.
+    fn filled(&self) -> Option<Rc<Config>> {
+        let session = self.controller.borrow();
+        let session = session.session()?;
+
+        self.overlay.fill(session);
+
+        Some(self.config())
     }
 
     /// A mapped key was pressed: take a snapshot of the open windows and let
@@ -393,6 +437,17 @@ fn watch_config(daemon: &Rc<Daemon>, path: &Path) {
     glib::MainContext::default().spawn_local(async move {
         while receiver.recv().await.is_ok() {
             daemon.reload();
+        }
+    });
+}
+
+/// Puts each window's thumbnail into the switcher as it's captured.
+fn watch_thumbnails(daemon: &Rc<Daemon>, thumbnails: async_channel::Receiver<Thumbnail>) {
+    let daemon = Rc::clone(daemon);
+
+    glib::MainContext::default().spawn_local(async move {
+        while let Ok(thumbnail) = thumbnails.recv().await {
+            daemon.overlay.set_thumbnail(&thumbnail);
         }
     });
 }
