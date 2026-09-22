@@ -96,6 +96,34 @@ half-saved file is a normal thing for an editor to leave behind for a moment.
 
 `nix run github:mawkler/raisin -- <app>`
 
+### NixOS
+
+The flake exports a module:
+
+```nix
+{
+  inputs.raisin.url = "github:mawkler/raisin";
+
+  # ...then, in your configuration:
+  imports = [ inputs.raisin.nixosModules.default ];
+
+  services.raisin = {
+    enable = true;
+    settings.keys.apps = {
+      t = "ghostty";
+      i = {
+        cmd = "brave";
+        app_id = "brave-browser";
+      };
+    };
+  };
+}
+```
+
+The daemon runs as a user service started by `graphical-session.target`, so the session has to reach
+systemd: `programs.hyprland.withUWSM = true` does that. Leaving `settings` out keeps your own
+`~/.config/raisin/config.toml`, which you can edit without rebuilding.
+
 ### Install with cargo
 
 `cargo install --git github:mawkler/raisin`

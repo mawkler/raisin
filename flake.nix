@@ -39,6 +39,7 @@
           in
           naersk-lib.buildPackage {
             src = ./.;
+            meta.mainProgram = "raisin";
             nativeBuildInputs = with pkgs; [
               pkg-config
               wrapGAppsHook4
@@ -46,6 +47,11 @@
             buildInputs = guiInputs pkgs;
           };
       });
+
+      nixosModules = {
+        raisin = import ./nix/nixos-module.nix self;
+        default = self.nixosModules.raisin;
+      };
 
       apps = forAllSystems (system: {
         default = {
