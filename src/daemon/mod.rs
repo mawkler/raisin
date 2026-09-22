@@ -6,6 +6,7 @@ mod ipc;
 mod overlay;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixListener;
@@ -23,7 +24,7 @@ use crate::compositor::integrations::hyprland::{
 };
 use crate::config::{Config, Target};
 use crate::preview::{Previews, Request, Thumbnail};
-use crate::switcher::Direction;
+use crate::switcher::{Direction, Session};
 use controller::{Controller, Effect, Event};
 use overlay::Overlay;
 
@@ -237,12 +238,15 @@ impl Daemon {
     /// Fills the overlay from the switch in progress, and says what the
     /// configuration is while it's at it.
     fn filled(&self) -> Option<Rc<Config>> {
-        let session = self.controller.borrow();
-        let session = session.session()?;
+        let config = self.config();
+        let controller = self.controller.borrow();
+        let session = controller.session()?;
 
-        self.overlay.fill(session);
+        self.overlay.fill(session, &triggers(&config, session));
 
-        Some(self.config())
+        drop(controller);
+
+        Some(config)
     }
 
     /// A mapped key was pressed: take a snapshot of the open windows and let
@@ -441,6 +445,21 @@ fn watch_config(daemon: &Rc<Daemon>, path: &Path) {
             daemon.reload();
         }
     });
+}
+
+/// Which key reaches each application on screen, so that the switcher can
+/// show it beside the application's name.
+fn triggers(config: &Config, session: &Session) -> HashMap<String, String> {
+    config
+        .keys
+        .apps
+        .iter()
+        .filter_map(|(key, target)| {
+            let group = session.find_group(target.search())?;
+
+            Some((group.to_owned(), key.to_string()))
+        })
+        .collect()
 }
 
 /// Puts each window's thumbnail into the switcher as it's captured.

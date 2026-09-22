@@ -160,19 +160,6 @@ impl Session {
             group.chain(windows)
         })
     }
-
-    /// The position of the highlighted window among [`Self::rows`], which is
-    /// what the list has to scroll to.
-    pub(crate) fn selected_row(&self) -> usize {
-        let preceding_rows: usize = self
-            .groups
-            .iter()
-            .take_while(|(name, _)| *name != &self.group)
-            .map(|(_, windows)| 1 + windows.len())
-            .sum();
-
-        preceding_rows + 1 + self.index
-    }
 }
 
 /// Which window of `windows` starts out highlighted.
@@ -421,16 +408,5 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn the_highlighted_row_is_the_one_the_list_scrolls_to() {
-        let mut session = session(None);
-
-        assert_eq!(session.selected_row(), 3);
-
-        session.cycle(Direction::Forward);
-
-        assert_eq!(session.selected_row(), 4);
     }
 }

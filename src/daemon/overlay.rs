@@ -34,7 +34,7 @@ window.raisin > widget {
     color: #eef1f7;
     font-size: 15px;
     font-weight: 600;
-    padding: 0 8px 14px 8px;
+    padding: 0 4px 14px 4px;
 }
 
 .group {
@@ -42,19 +42,27 @@ window.raisin > widget {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
-    padding: 12px 10px 5px 10px;
 }
 
-list, list > row {
-    background-color: transparent;
+.tile {
+    padding: 6px;
+    border-radius: 10px;
     outline: none;
 }
 
-list > row {
+.tile.selected {
+    background-color: alpha(#6b8cff, 0.22);
+    box-shadow: inset 0 0 0 1px alpha(#86a4ff, 0.65);
+}
+
+.title {
     color: #c4cad8;
-    font-size: 13px;
-    padding: 7px 12px;
-    border-radius: 10px;
+    font-size: 12px;
+    padding: 6px 2px 0 2px;
+}
+
+.tile.selected .title {
+    color: #ffffff;
 }
 
 .thumbnail {
@@ -63,16 +71,10 @@ list > row {
     background-color: alpha(#000000, 0.25);
 }
 
-list > row.selected {
-    color: #ffffff;
-    background-color: alpha(#6b8cff, 0.22);
-    box-shadow: inset 2px 0 0 0 #86a4ff;
-}
-
 .footer {
     color: #6e7688;
     font-size: 11px;
-    padding: 16px 8px 0 8px;
+    padding: 16px 4px 0 4px;
 }
 
 .keycap {
@@ -84,13 +86,21 @@ list > row.selected {
     border-radius: 7px;
     background-color: alpha(#ffffff, 0.06);
 }
+
+scrollbar {
+    background-color: transparent;
+}
 ";
 
 pub(crate) struct Overlay {
     window: gtk4::Window,
     heading: gtk4::Label,
-    list: gtk4::ListBox,
-    selected: RefCell<Option<gtk4::ListBoxRow>>,
+    /// The applications, side by side.
+    strip: gtk4::Box,
+    /// Each window's tile, by the window it stands for, so that the highlight
+    /// can move without rebuilding anything.
+    tiles: RefCell<HashMap<String, gtk4::Box>>,
+    selected: RefCell<Option<gtk4::Box>>,
     panel: gtk4::Box,
     scroll: gtk4::ScrolledWindow,
     footer: RefCell<gtk4::Box>,
@@ -128,20 +138,23 @@ impl Overlay {
         heading.add_css_class("heading");
         line(&heading);
 
-        let list = gtk4::ListBox::new();
-        list.set_selection_mode(gtk4::SelectionMode::None);
+        let strip = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);
 
+        // The applications run off to the side rather than down the screen, so
+        // the panel stays the height of one row of windows however many there
+        // are.
         let scroll = gtk4::ScrolledWindow::new();
-        scroll.set_child(Some(&list));
-        scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+        scroll.set_child(Some(&strip));
+        scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+        scroll.set_propagate_natural_width(true);
         scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_width(switcher.width);
         scroll.set_max_content_height(switcher.max_height);
 
         let footer = footer(keys);
 
         let panel = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         panel.add_css_class("panel");
-        panel.set_size_request(switcher.width, -1);
         panel.append(&heading);
         panel.append(&scroll);
         panel.append(&footer);
@@ -158,7 +171,8 @@ impl Overlay {
         Ok(Self {
             window,
             heading,
-            list,
+            strip,
+            tiles: RefCell::new(HashMap::new()),
             selected: RefCell::new(None),
             panel,
             scroll,
@@ -176,7 +190,7 @@ impl Overlay {
         keys: &config::Keys,
         previews: &config::Previews,
     ) {
-        self.panel.set_size_request(switcher.width, -1);
+        self.scroll.set_max_content_width(switcher.width);
         self.scroll.set_max_content_height(switcher.max_height);
         self.previews.set(*previews);
         self.icons.set(switcher.icons);
@@ -188,44 +202,54 @@ impl Overlay {
         self.footer.replace(footer);
     }
 
-    /// Lists every open window, grouped, with the switch's application named
-    /// at the top.
+    /// Lays out every open window, its application's key beside the
+    /// application's name, with the switch's own application named at the top.
     ///
-    /// Only the windows being switched between get a thumbnail: they're the
-    /// ones the user is choosing among, and giving every group one would make
-    /// the panel taller than the screen.
-    pub(crate) fn fill(&self, session: &Session) {
+    /// Only the windows being switched between get a thumbnail: they are the
+    /// ones the user is choosing among.
+    pub(crate) fn fill(&self, session: &Session, triggers: &HashMap<String, String>) {
         self.heading
             .set_text(&format!("Switch to {}", session.label()));
 
-        while let Some(row) = self.list.first_child() {
-            self.list.remove(&row);
+        while let Some(block) = self.strip.first_child() {
+            self.strip.remove(&block);
         }
         self.selected.replace(None);
+        self.tiles.borrow_mut().clear();
         self.thumbnails.borrow_mut().clear();
 
         let previews = self.previews.get();
-        let mut group = "";
+        let mut windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        let mut previewed = false;
 
         for row in session.rows() {
             match row {
                 Row::Group(name) => {
-                    group = name;
-                    self.list.append(&group_row(name, self.icons.get()));
+                    previewed = previews.enabled && name == session.group();
+                    windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+                    let block = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+                    block.append(&group_header(
+                        name,
+                        triggers.get(name).map(String::as_str),
+                        self.icons.get(),
+                    ));
+                    block.append(&windows);
+
+                    self.strip.append(&block);
                 }
-                // A window without a title is better named by its
-                // application than by an empty row.
+                // A window without a title is better named by its application
+                // than by an empty tile.
                 Row::Window { window, .. } => {
                     let title = if window.title.is_empty() {
                         &window.app_id
                     } else {
                         &window.title
                     };
-                    let previewed = previews.enabled
-                        && group == session.group()
-                        && !window.identifier.is_empty();
+                    let preview =
+                        (previewed && !window.identifier.is_empty()).then_some(previews.width);
 
-                    let (row, thumbnail) = window_row(title, previewed.then_some(previews.width));
+                    let (tile, thumbnail) = tile(title, preview, previews.width);
 
                     if let Some(thumbnail) = thumbnail {
                         self.thumbnails
@@ -233,7 +257,8 @@ impl Overlay {
                             .insert(window.identifier.clone(), thumbnail);
                     }
 
-                    self.list.append(&row);
+                    windows.append(&tile);
+                    self.tiles.borrow_mut().insert(window.id.clone(), tile);
                 }
             }
         }
@@ -258,23 +283,27 @@ impl Overlay {
         picture.set_paintable(Some(&texture));
     }
 
-    /// Marks the window that a release of Super would focus, scrolling it into
-    /// view.
+    /// Marks the window that a release of Super would focus, scrolling it
+    /// into view.
     pub(crate) fn highlight(&self, session: &Session) {
         if let Some(previous) = self.selected.replace(None) {
             previous.remove_css_class("selected");
         }
 
-        let Ok(index) = i32::try_from(session.selected_row()) else {
-            return;
-        };
-        let Some(row) = self.list.row_at_index(index) else {
+        let tile = self
+            .tiles
+            .borrow()
+            .get(&session.selected_window().id)
+            .cloned();
+        let Some(tile) = tile else {
             return;
         };
 
-        row.add_css_class("selected");
-        row.grab_focus();
-        self.selected.replace(Some(row));
+        tile.add_css_class("selected");
+        // Focus is what scrolls a tile into view, and nothing else in the
+        // panel takes any.
+        tile.grab_focus();
+        self.selected.replace(Some(tile));
     }
 
     pub(crate) fn show(&self) {
@@ -308,26 +337,29 @@ fn line(label: &gtk4::Label) {
     label.set_ellipsize(pango::EllipsizeMode::End);
 }
 
-fn group_row(name: &str, icons: bool) -> gtk4::ListBoxRow {
-    let label = gtk4::Label::new(Some(&name.to_uppercase()));
-    label.add_css_class("group");
-    line(&label);
-
-    let contents = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    contents.add_css_class("group-row");
+/// An application's name, its icon, and the key that switches to it.
+fn group_header(name: &str, trigger: Option<&str>, icons: bool) -> gtk4::Box {
+    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
 
     if let Some(icon) = icons.then(|| app_icon(name)).flatten() {
-        contents.append(&icon);
+        header.append(&icon);
     }
 
-    contents.append(&label);
+    let label = gtk4::Label::new(Some(&name.to_uppercase()));
+    label.add_css_class("group");
+    // The name takes what the tiles beneath it leave, and gives way before
+    // the key does: an ellipsised label would otherwise ask for nothing and
+    // get it.
+    line(&label);
+    header.append(&label);
 
-    let row = gtk4::ListBoxRow::new();
-    row.set_child(Some(&contents));
-    row.set_focusable(false);
-    row.set_activatable(false);
+    if let Some(trigger) = trigger {
+        let key = gtk4::Label::new(Some(trigger));
+        key.add_css_class("keycap");
+        header.append(&key);
+    }
 
-    row
+    header
 }
 
 /// The application's own icon, if the icon theme has one under a name the
@@ -350,44 +382,42 @@ fn app_icon(app_id: &str) -> Option<gtk4::Image> {
     Some(icon)
 }
 
-/// A window's row, with room for its thumbnail when `preview` says how wide
-/// one should be. The room is made now rather than when the capture arrives,
-/// so that rows don't jump about as thumbnails turn up.
-fn window_row(title: &str, preview: Option<u32>) -> (gtk4::ListBoxRow, Option<gtk4::Picture>) {
+/// One window: what it looks like, when raisin has been able to see it, and
+/// what it is called.
+///
+/// The room for a thumbnail is made now rather than when the capture arrives,
+/// so tiles don't jump about as they turn up.
+fn tile(title: &str, preview: Option<u32>, width: u32) -> (gtk4::Box, Option<gtk4::Picture>) {
+    let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    tile.add_css_class("tile");
+    tile.set_focusable(true);
+    tile.set_size_request(width as i32, -1);
+
+    let picture = preview.map(|width| {
+        let picture = gtk4::Picture::new();
+        picture.set_content_fit(gtk4::ContentFit::Contain);
+        picture.set_halign(gtk4::Align::Center);
+        picture.set_valign(gtk4::Align::Center);
+
+        let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        frame.add_css_class("thumbnail");
+        frame.set_size_request(width as i32, (width as f32 / RATIO) as i32);
+        frame.append(&picture);
+        tile.append(&frame);
+
+        picture
+    });
+
     let label = gtk4::Label::new(Some(title));
-    line(&label);
+    label.add_css_class("title");
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    // Enough of a hint for the label to give way to the tile's width rather
+    // than the other way round.
+    label.set_max_width_chars(1);
+    label.set_xalign(0.0);
+    tile.append(&label);
 
-    let row = gtk4::ListBoxRow::new();
-    row.set_activatable(false);
-
-    let Some(width) = preview else {
-        row.set_child(Some(&label));
-
-        return (row, None);
-    };
-
-    let picture = gtk4::Picture::new();
-    picture.set_content_fit(gtk4::ContentFit::Contain);
-    picture.set_halign(gtk4::Align::Center);
-    picture.set_valign(gtk4::Align::Center);
-
-    // The room for the thumbnail is the box, not the thumbnail itself. It is
-    // there before any capture arrives, so rows don't jump about as they turn
-    // up, and it keeps every row the same height whatever shape the window is:
-    // the picture draws at its own size inside it rather than stretching.
-    let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    frame.add_css_class("thumbnail");
-    frame.set_size_request(width as i32, (width as f32 / RATIO) as i32);
-    frame.set_halign(gtk4::Align::Start);
-    frame.set_valign(gtk4::Align::Center);
-    frame.append(&picture);
-
-    let contents = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-    contents.append(&frame);
-    contents.append(&label);
-    row.set_child(Some(&contents));
-
-    (row, Some(picture))
+    (tile, picture)
 }
 
 fn footer(keys: &config::Keys) -> gtk4::Box {
