@@ -139,7 +139,9 @@ impl Capturer {
 
         // The session first describes what it will hand over: how big, and in
         // which formats.
-        self.dispatch_until(|state| state.frame.described || state.frame.stopped)?;
+        self.dispatch_until("describing the window", |state| {
+            state.frame.described || state.frame.stopped
+        })?;
         anyhow::ensure!(
             !self.state.frame.stopped,
             "the compositor stopped capturing"
@@ -165,7 +167,9 @@ impl Capturer {
         frame.capture();
 
         let captured = self
-            .dispatch_until(|state| state.frame.ready || state.frame.failed.is_some())
+            .dispatch_until("copying the window", |state| {
+                state.frame.ready || state.frame.failed.is_some()
+            })
             .and_then(|()| match &self.state.frame.failed {
                 Some(reason) => anyhow::bail!("the compositor refused to capture: {reason}"),
                 None => Ok(super::scale(
@@ -225,7 +229,7 @@ impl Capturer {
 
     /// Reads Wayland events until `ready` says the wait is over, or until the
     /// compositor has had long enough.
-    fn dispatch_until(&mut self, ready: impl Fn(&State) -> bool) -> Result<()> {
+    fn dispatch_until(&mut self, doing: &str, ready: impl Fn(&State) -> bool) -> Result<()> {
         let deadline = Instant::now() + TIMEOUT;
 
         while !ready(&self.state) {
@@ -241,7 +245,11 @@ impl Capturer {
             }
 
             let left = deadline.saturating_duration_since(Instant::now());
-            anyhow::ensure!(!left.is_zero(), "the compositor took too long");
+            anyhow::ensure!(
+                !left.is_zero(),
+                "the compositor spent longer than {}ms {doing}",
+                TIMEOUT.as_millis()
+            );
 
             let Some(guard) = self.queue.prepare_read() else {
                 continue;
@@ -254,7 +262,10 @@ impl Capturer {
             let mut polling = [PollFd::new(&self.connection, PollFlags::IN)];
 
             if rustix::event::poll(&mut polling, Some(&timeout)).unwrap_or(0) == 0 {
-                anyhow::bail!("the compositor took too long");
+                anyhow::bail!(
+                    "the compositor spent longer than {}ms {doing}",
+                    TIMEOUT.as_millis()
+                );
             }
 
             let _ = guard.read();

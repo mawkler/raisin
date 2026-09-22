@@ -22,7 +22,7 @@ use crate::compositor::integrations::hyprland::{
     self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, NEXT_EVENT, PREVIOUS_EVENT, SWITCH_EVENT,
 };
 use crate::config::{Config, Target};
-use crate::preview::{Previews, Thumbnail};
+use crate::preview::{Previews, Request, Thumbnail};
 use crate::switcher::Direction;
 use controller::{Controller, Effect, Event};
 use overlay::Overlay;
@@ -179,7 +179,7 @@ impl Daemon {
                 // Fill only happens once the switcher is actually on screen,
                 // so a tap quick enough to skip it captures nothing at all.
                 if config.previews.enabled {
-                    let identifiers = self
+                    let windows = self
                         .controller
                         .borrow()
                         .session()
@@ -187,8 +187,15 @@ impl Daemon {
                             session
                                 .group_windows()
                                 .iter()
-                                .map(|window| window.identifier.clone())
-                                .filter(|identifier| !identifier.is_empty())
+                                .filter(|window| !window.identifier.is_empty())
+                                .map(|window| Request {
+                                    identifier: window.identifier.clone(),
+                                    label: if window.title.is_empty() {
+                                        window.app_id.clone()
+                                    } else {
+                                        format!("{} ({})", window.title, window.app_id)
+                                    },
+                                })
                                 .collect()
                         })
                         .unwrap_or_default();
@@ -197,7 +204,7 @@ impl Daemon {
                     // asks for as much room as its texture is wide, so a
                     // larger one would stretch the panel rather than sharpen
                     // the thumbnail.
-                    self.previews.capture(identifiers, config.previews.width);
+                    self.previews.capture(windows, config.previews.width);
                 }
             }
             Effect::Highlight => {

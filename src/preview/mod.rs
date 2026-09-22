@@ -29,11 +29,16 @@ pub(crate) struct Thumbnail {
     pub(crate) pixels: Vec<u8>,
 }
 
+/// A window to capture, and what to call it if the capture goes wrong.
+pub(crate) struct Request {
+    pub(crate) identifier: String,
+    /// The window as the user would recognise it, for the one line raisin
+    /// prints when a capture doesn't come back.
+    pub(crate) label: String,
+}
+
 enum Command {
-    Capture {
-        identifiers: Vec<String>,
-        width: u32,
-    },
+    Capture { windows: Vec<Request>, width: u32 },
     Cancel,
 }
 
@@ -58,10 +63,10 @@ impl Previews {
 
     /// Asks for these windows, in this order, instead of whatever was being
     /// captured before.
-    pub(crate) fn capture(&self, identifiers: Vec<String>, width: u32) {
+    pub(crate) fn capture(&self, windows: Vec<Request>, width: u32) {
         let _ = self
             .commands
-            .send_blocking(Command::Capture { identifiers, width });
+            .send_blocking(Command::Capture { windows, width });
     }
 
     /// Stops capturing: the switcher has gone.
@@ -80,7 +85,7 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
     };
 
     while let Ok(command) = commands.recv_blocking() {
-        let Command::Capture { identifiers, width } = command else {
+        let Command::Capture { windows, width } = command else {
             continue;
         };
 
@@ -89,29 +94,69 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
             return;
         }
 
-        let mut complained = false;
+        // A window that didn't come back gets one more go at the end, once
+        // whatever the compositor was busy with has passed.
+        let mut failed = match capture(&mut capturer, windows, width, thumbnails) {
+            Ok(failed) => failed,
+            Err(Gone) => return,
+        };
 
-        for identifier in identifiers {
-            // A newer request means these are already the wrong windows.
-            if !commands.is_empty() {
-                break;
-            }
+        if !failed.is_empty() && commands.is_empty() {
+            let retrying = failed.into_iter().map(|(window, _)| window).collect();
 
-            match capturer.capture(&identifier, width) {
-                Ok(thumbnail) => {
-                    if thumbnails.send_blocking(thumbnail).is_err() {
-                        return;
-                    }
-                }
-                Err(error) => {
-                    if !complained {
-                        eprintln!("raisin: couldn't preview a window: {error:#}");
-                        complained = true;
-                    }
+            failed = match capture(&mut capturer, retrying, width, thumbnails) {
+                Ok(failed) => failed,
+                Err(Gone) => return,
+            };
+        }
+
+        complain(&failed);
+    }
+}
+
+/// Nobody is listening for thumbnails any more.
+struct Gone;
+
+/// Captures each window in turn, returning the ones that didn't come back.
+fn capture(
+    capturer: &mut Capturer,
+    windows: Vec<Request>,
+    width: u32,
+    thumbnails: &Sender<Thumbnail>,
+) -> Result<Vec<(Request, anyhow::Error)>, Gone> {
+    let mut failed = Vec::new();
+
+    for window in windows {
+        match capturer.capture(&window.identifier, width) {
+            Ok(thumbnail) => {
+                if thumbnails.send_blocking(thumbnail).is_err() {
+                    return Err(Gone);
                 }
             }
+            Err(error) => failed.push((window, error)),
         }
     }
+
+    Ok(failed)
+}
+
+/// One line about the windows that couldn't be captured, however many there
+/// were: the point is to say what went wrong once, not once per window.
+fn complain(failed: &[(Request, anyhow::Error)]) {
+    let Some((window, error)) = failed.first() else {
+        return;
+    };
+
+    let others = match failed.len() - 1 {
+        0 => String::new(),
+        1 => " (and one other window)".to_owned(),
+        others => format!(" (and {others} other windows)"),
+    };
+
+    eprintln!(
+        "raisin: couldn't preview {}: {error:#}{others}",
+        window.label
+    );
 }
 
 /// Scales a window's contents down to `target` pixels across.
