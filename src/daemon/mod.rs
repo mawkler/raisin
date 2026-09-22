@@ -333,12 +333,7 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
                 return;
             };
             let config = daemon.config();
-            let Some(target) = key
-                .chars()
-                .next()
-                .and_then(|key| config.target(key))
-                .cloned()
-            else {
+            let Some(target) = config.target(key).cloned() else {
                 return;
             };
 

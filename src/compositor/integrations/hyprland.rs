@@ -556,30 +556,37 @@ impl Binds {
     /// Installs a binding for every mapped letter — one for each direction —
     /// plus the ones that confirm a switch when Super is released.
     pub(crate) fn install(config: &Config) -> Result<Self> {
-        let switches = config.keys.apps.keys().flat_map(|key| {
-            [
-                Bind {
-                    name: format!("switch:{key}"),
-                    mods: vec!["SUPER".to_owned()],
-                    key: key.to_string(),
-                    event: format!("{SWITCH_EVENT}{key}"),
-                    role: format!("the key for {}", config.keys.apps[key].app),
-                    flags: Flags::default(),
-                    ownership: Ownership::Exclusive,
-                    occupied: false,
-                },
-                // Shift and the same key walks the group the other way.
-                Bind {
-                    name: format!("back:{key}"),
-                    mods: vec!["SUPER".to_owned(), "SHIFT".to_owned()],
-                    key: key.to_string(),
-                    event: format!("{BACK_EVENT}{key}"),
-                    role: format!("the key for {}, backwards", config.keys.apps[key].app),
-                    flags: Flags::default(),
-                    ownership: Ownership::Exclusive,
-                    occupied: false,
-                },
-            ]
+        let switches = config.keys.apps.iter().flat_map(|(key, target)| {
+            let id = key.id();
+            let mut mods = vec!["SUPER".to_owned()];
+            mods.extend(key.mods.iter().cloned());
+
+            let forward = Bind {
+                name: format!("switch:{id}"),
+                mods,
+                key: key.key.clone(),
+                event: format!("{SWITCH_EVENT}{id}"),
+                role: format!("the key for {}", target.app),
+                flags: Flags::default(),
+                ownership: Ownership::Exclusive,
+                occupied: false,
+            };
+
+            // Shift and the same key walks the group the other way — but only
+            // for a key that doesn't already carry modifiers of its own, since
+            // there would be nowhere left to put the Shift.
+            let backward = key.mods.is_empty().then(|| Bind {
+                name: format!("back:{id}"),
+                mods: vec!["SUPER".to_owned(), "SHIFT".to_owned()],
+                key: key.key.clone(),
+                event: format!("{BACK_EVENT}{id}"),
+                role: format!("the key for {}, backwards", target.app),
+                flags: Flags::default(),
+                ownership: Ownership::Exclusive,
+                occupied: false,
+            });
+
+            std::iter::once(forward).chain(backward)
         });
 
         let confirms = SUPER_KEYS.iter().map(|key| Bind {

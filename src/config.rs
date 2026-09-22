@@ -70,9 +70,13 @@ impl Config {
         toml::from_str(&file).with_context(|| format!("{} isn't valid", path.display()))
     }
 
-    /// The application `Super` + `key` targets, if any.
-    pub(crate) fn target(&self, key: char) -> Option<&Target> {
-        self.keys.apps.get(&key)
+    /// The application the key raisin named `id` targets, if any.
+    pub(crate) fn target(&self, id: &str) -> Option<&Target> {
+        self.keys
+            .apps
+            .iter()
+            .find(|(key, _)| key.id() == id)
+            .map(|(_, target)| target)
     }
 }
 
@@ -130,10 +134,14 @@ impl From<Entry> for Target {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Keys {
-    /// Which letter targets which application. `Super` and the letter starts
-    /// a switch; holding `Shift` as well walks the group the other way.
+    /// Which key targets which application. `Super` and the key starts a
+    /// switch; for a key with no modifiers of its own, holding `Shift` as well
+    /// walks the group the other way.
+    ///
+    /// A key may carry further modifiers, spelled as `next` and `previous`
+    /// are: `"SHIFT + a"`.
     #[serde(default)]
-    pub(crate) apps: BTreeMap<char, Target>,
+    pub(crate) apps: BTreeMap<Key, Target>,
     /// Moves the highlight to the next window.
     #[serde(default)]
     pub(crate) next: Option<Key>,
@@ -159,7 +167,7 @@ impl Default for Keys {
 /// A key, as the configuration file spells it: `Tab`, or `SHIFT + Tab`.
 ///
 /// Super is held throughout a switch, so it's implied and needn't be written.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "String")]
 pub(crate) struct Key {
     /// Modifiers besides Super, as Hyprland names them.
@@ -194,6 +202,18 @@ impl TryFrom<String> for Key {
 
     fn try_from(key: String) -> Result<Self, Self::Error> {
         key.parse()
+    }
+}
+
+impl Key {
+    /// The key as one word, for the event raisin asks Hyprland to emit when
+    /// it's pressed: `shift+a`, or just `a`.
+    pub(crate) fn id(&self) -> String {
+        let mut id: Vec<_> = self.mods.iter().map(|m| m.to_lowercase()).collect();
+        id.sort();
+        id.push(self.key.to_lowercase());
+
+        id.join("+")
     }
 }
 
@@ -311,12 +331,12 @@ mod tests {
             "#,
         );
 
-        assert_eq!(config.target('t'), Some(&Target::new("ghostty", None)));
+        assert_eq!(config.target("t"), Some(&Target::new("ghostty", None)));
         assert_eq!(
-            config.target('i'),
+            config.target("i"),
             Some(&Target::new("brave", Some("brave-browser")))
         );
-        assert_eq!(config.target('q'), None);
+        assert_eq!(config.target("q"), None);
     }
 
     #[test]
@@ -337,6 +357,32 @@ mod tests {
     fn nothing_is_bound_until_the_file_says_so() {
         assert!(Config::default().keys.apps.is_empty());
         assert!(config("").keys.apps.is_empty());
+    }
+
+    #[test]
+    fn an_application_key_may_carry_modifiers_too() {
+        let config = config(
+            r#"
+            [keys.apps]
+            a = "audacity"
+            "SHIFT + a" = "teams-for-linux"
+            "#,
+        );
+
+        assert_eq!(config.target("a"), Some(&Target::new("audacity", None)));
+        assert_eq!(
+            config.target("shift+a"),
+            Some(&Target::new("teams-for-linux", None))
+        );
+    }
+
+    #[test]
+    fn a_key_names_itself_the_same_way_however_it_was_written() {
+        let spelled: Key = "SHIFT + A".to_owned().try_into().expect("a key");
+        let differently: Key = "shift+a".to_owned().try_into().expect("a key");
+
+        assert_eq!(spelled.id(), "shift+a");
+        assert_eq!(spelled.id(), differently.id());
     }
 
     #[test]

@@ -78,8 +78,9 @@ width = 168       # pixels wide; the height follows the window's own proportions
 
 You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Super and Tab.
 
-Holding `Shift` with an application's letter walks its windows the other way, the way Alt-Shift-Tab
-does. That needs no configuration.
+Holding `Shift` with an application's key walks its windows the other way, the way Alt-Shift-Tab
+does. That needs no configuration — and it's why a key that names `Shift` itself doesn't get one:
+`"SHIFT + a"` is free only while plain `a` is unmapped, and raisin says so if you map both.
 
 Saving the file is enough: raisin watches it and rebinds straight away, ending any switch that was
 in progress under the old keys. Raisin says so on startup when one of its keys is already bound in your Hyprland configuration, and
