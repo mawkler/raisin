@@ -107,7 +107,7 @@ impl Target {
 enum Entry {
     Command(String),
     Detailed {
-        command: String,
+        cmd: String,
         #[serde(default)]
         app_id: Option<String>,
     },
@@ -117,10 +117,7 @@ impl From<Entry> for Target {
     fn from(entry: Entry) -> Self {
         match entry {
             Entry::Command(app) => Self { app, app_id: None },
-            Entry::Detailed { command, app_id } => Self {
-                app: command,
-                app_id,
-            },
+            Entry::Detailed { cmd, app_id } => Self { app: cmd, app_id },
         }
     }
 }
@@ -310,7 +307,7 @@ mod tests {
             r#"
             [keys.apps]
             t = "ghostty"
-            i = { command = "brave", app_id = "brave-browser" }
+            i = { cmd = "brave", app_id = "brave-browser" }
             "#,
         );
 
