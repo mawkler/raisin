@@ -5,6 +5,8 @@
 //! the process-spawning path entirely, which is what lets a key press turn
 //! into a focused window in about a millisecond.
 
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -178,6 +180,8 @@ struct Bind {
     key: String,
     /// The event Hyprland emits for it.
     event: String,
+    /// What it does, for when raisin has to explain itself.
+    role: String,
     flags: Flags,
     ownership: Ownership,
     /// Whether something else was bound to this key when raisin started. A
@@ -301,6 +305,17 @@ impl Bind {
     fn modmask(&self) -> u32 {
         self.mods.iter().map(|modifier| modmask(modifier)).sum()
     }
+
+    /// The key itself, as something to compare binds by: two binds in the same
+    /// slot are two binds on the same key.
+    fn slot(&self) -> (u32, String) {
+        (self.modmask(), self.key.to_lowercase())
+    }
+
+    /// The key as a person writes it.
+    fn spelled(&self) -> String {
+        self.keys(ConfigLanguage::Lua)
+    }
 }
 
 impl Flags {
@@ -358,6 +373,7 @@ fn session_binds(name: &str, key: &Key, event: &str) -> Vec<Bind> {
                 mods,
                 key: key.key.clone(),
                 event: event.to_owned(),
+                role: name.to_owned(),
                 flags: Flags {
                     // A bind left behind by a daemon that crashed can then
                     // never swallow anyone's key.
@@ -392,6 +408,7 @@ fn cancel_binds(keys: &Keys) -> Vec<Bind> {
         mods: Vec::new(),
         key: keys.cancel.key.clone(),
         event: CANCEL_EVENT.to_owned(),
+        role: "cancel".to_owned(),
         flags: Flags {
             non_consuming: true,
             ignore_mods: true,
@@ -411,21 +428,116 @@ struct ExistingBind {
     arg: String,
 }
 
-/// Whether anything other than raisin is bound to `bind`'s key.
-fn key_is_occupied(bind: &Bind) -> bool {
-    let Ok(response) = request("j/binds") else {
-        // Better to leave a bind behind than to take someone else's away.
-        return true;
-    };
-    let Ok(existing) = serde_json::from_str::<Vec<ExistingBind>>(&response) else {
-        return true;
+/// What else is bound to the keys raisin is about to take.
+struct Occupied {
+    /// How many binds that aren't raisin's are on each key.
+    others: HashMap<(u32, String), usize>,
+}
+
+impl Occupied {
+    fn scan(language: ConfigLanguage) -> Self {
+        let mut others: HashMap<(u32, String), usize> = HashMap::new();
+
+        let Ok(response) = request("j/binds") else {
+            return Self { others };
+        };
+        let Ok(existing) = serde_json::from_str::<Vec<ExistingBind>>(&response) else {
+            return Self { others };
+        };
+
+        for bind in existing {
+            // The legacy parser keeps raisin's own events in plain sight.
+            if bind.arg.starts_with(EVENT_PREFIX) {
+                continue;
+            }
+
+            *others
+                .entry((bind.modmask, bind.key.to_lowercase()))
+                .or_default() += 1;
+        }
+
+        // The Lua parser doesn't: its binds carry a reference rather than a
+        // name, so raisin has to ask which ones are its own.
+        for (slot, count) in raisin_owned(language) {
+            if let Some(total) = others.get_mut(&slot) {
+                *total = total.saturating_sub(count);
+            }
+        }
+
+        Self { others }
+    }
+
+    fn others(&self, bind: &Bind) -> usize {
+        self.others.get(&bind.slot()).copied().unwrap_or(0)
+    }
+}
+
+/// Whether raisin's own bind is already on this key from an earlier run.
+///
+/// Only shared keys can be: an exclusive one clears the key before binding it.
+fn already_there(bind: &Bind, installed: &HashSet<(u32, String)>) -> bool {
+    bind.ownership == Ownership::Shared && installed.contains(&bind.slot())
+}
+
+/// The keys that already carry a bind of raisin's.
+///
+/// A shared key that something else is bound to keeps raisin's bind when the
+/// daemon stops, because taking it off would take the other one with it. The
+/// next run has to recognise it rather than add a second one.
+fn installed_by_raisin(language: ConfigLanguage) -> HashSet<(u32, String)> {
+    // Lua binds are kept by name in a table of raisin's own, which can't hold
+    // the same one twice.
+    if language != ConfigLanguage::Lua {
+        return request("j/binds")
+            .ok()
+            .and_then(|response| serde_json::from_str::<Vec<ExistingBind>>(&response).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|bind| bind.arg.starts_with(EVENT_PREFIX))
+            .map(|bind| (bind.modmask, bind.key.to_lowercase()))
+            .collect();
+    }
+
+    HashSet::new()
+}
+
+/// The keys raisin already holds in this compositor, as the Lua state knows
+/// them. Binds an earlier run left behind are raisin's own, not a conflict.
+fn raisin_owned(language: ConfigLanguage) -> HashMap<(u32, String), usize> {
+    let mut owned = HashMap::new();
+
+    if language != ConfigLanguage::Lua {
+        return owned;
+    }
+
+    let listing = r#"repl local out = {} for _, e in pairs(__raisin or {}) do out[#out+1] = e.bind.display_key end return table.concat(out, "\n")"#;
+    let Ok(response) = request(listing) else {
+        return owned;
     };
 
-    existing.iter().any(|existing| {
-        existing.key == bind.key
-            && existing.modmask == bind.modmask()
-            && !existing.arg.starts_with(EVENT_PREFIX)
-    })
+    for line in response.lines() {
+        if let Some(slot) = parse_keys(line) {
+            *owned.entry(slot).or_default() += 1;
+        }
+    }
+
+    owned
+}
+
+/// `SUPER + Super_L`, the way both Hyprland and raisin spell a key, as the
+/// modifiers and the key it stands for.
+fn parse_keys(keys: &str) -> Option<(u32, String)> {
+    let mut parts: Vec<_> = keys
+        .split('+')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
+    let key = parts.pop()?;
+
+    Some((
+        parts.iter().map(|part| modmask(part)).sum(),
+        key.to_lowercase(),
+    ))
 }
 
 /// The keybinds that make the switcher work, for as long as the daemon runs.
@@ -444,13 +556,14 @@ impl Binds {
     /// Installs a binding for every mapped letter — one for each direction —
     /// plus the ones that confirm a switch when Super is released.
     pub(crate) fn install(config: &Config) -> Result<Self> {
-        let switches = config.apps.keys().flat_map(|key| {
+        let switches = config.keys.apps.keys().flat_map(|key| {
             [
                 Bind {
                     name: format!("switch:{key}"),
                     mods: vec!["SUPER".to_owned()],
                     key: key.to_string(),
                     event: format!("{SWITCH_EVENT}{key}"),
+                    role: format!("the key for {}", config.keys.apps[key].app),
                     flags: Flags::default(),
                     ownership: Ownership::Exclusive,
                     occupied: false,
@@ -461,6 +574,7 @@ impl Binds {
                     mods: vec!["SUPER".to_owned(), "SHIFT".to_owned()],
                     key: key.to_string(),
                     event: format!("{BACK_EVENT}{key}"),
+                    role: format!("the key for {}, backwards", config.keys.apps[key].app),
                     flags: Flags::default(),
                     ownership: Ownership::Exclusive,
                     occupied: false,
@@ -473,6 +587,7 @@ impl Binds {
             mods: vec!["SUPER".to_owned()],
             key: (*key).to_owned(),
             event: CONFIRM_EVENT.to_owned(),
+            role: "confirming a switch".to_owned(),
             flags: Flags {
                 release: true,
                 transparent: true,
@@ -503,22 +618,63 @@ impl Binds {
             session,
         };
 
-        binds.note_occupied_keys();
+        binds.warn_about_conflicts(config);
         binds.forget_stale_lua_binds();
         binds.add()?;
 
         Ok(binds)
     }
 
-    /// Records which of the shared keys someone else is already using.
-    fn note_occupied_keys(&mut self) {
-        if self.language != ConfigLanguage::Legacy {
-            return;
+    /// Says what raisin is about to do to keys that are already spoken for,
+    /// and to keys it has asked for twice itself. Silence means every key it
+    /// binds is its own and means one thing.
+    fn warn_about_conflicts(&mut self, config: &Config) {
+        if config.keys.apps.is_empty() {
+            eprintln!(
+                "raisin: no applications are configured, so no keys are bound; \
+                 add some under [keys.apps]"
+            );
         }
 
+        let mut roles: HashMap<(u32, String), String> = HashMap::new();
+
+        for bind in self.binds.iter().chain(&self.session) {
+            match roles.entry(bind.slot()) {
+                Entry::Occupied(taken) => eprintln!(
+                    "raisin: {} is {} and {} at once; only one of them will happen",
+                    bind.spelled(),
+                    taken.get(),
+                    bind.role
+                ),
+                Entry::Vacant(free) => {
+                    free.insert(bind.role.clone());
+                }
+            }
+        }
+
+        let occupied = Occupied::scan(self.language);
+        let mut mentioned = HashMap::new();
+
         for bind in self.binds.iter_mut().chain(&mut self.session) {
-            if bind.ownership == Ownership::Shared {
-                bind.occupied = key_is_occupied(bind);
+            bind.occupied = occupied.others(bind) > 0;
+
+            if !bind.occupied || mentioned.insert(bind.slot(), ()).is_some() {
+                continue;
+            }
+
+            match bind.ownership {
+                Ownership::Exclusive => eprintln!(
+                    "raisin: {} is already bound in your Hyprland configuration; raisin uses it \
+                     for {} while it runs, and `hyprctl reload` gives it back",
+                    bind.spelled(),
+                    bind.role
+                ),
+                Ownership::Shared => eprintln!(
+                    "raisin: {} is already bound in your Hyprland configuration; raisin's \
+                     binding for {} joins it rather than replacing it, so both will happen",
+                    bind.spelled(),
+                    bind.role
+                ),
             }
         }
     }
@@ -550,7 +706,13 @@ impl Binds {
     }
 
     fn add(&self) -> Result<()> {
+        let installed = installed_by_raisin(self.language);
+
         for bind in &self.binds {
+            if already_there(bind, &installed) {
+                continue;
+            }
+
             for command in bind.add(self.language) {
                 let response = request(&command)?;
                 anyhow::ensure!(
@@ -569,7 +731,13 @@ impl Binds {
     /// screen to use them. They belong to the applications underneath the rest
     /// of the time.
     pub(crate) fn capture_session_keys(&self) {
+        let installed = installed_by_raisin(self.language);
+
         for bind in &self.session {
+            if already_there(bind, &installed) {
+                continue;
+            }
+
             for command in bind.add(self.language) {
                 if let Err(error) = request(&command) {
                     eprintln!("raisin: failed to bind {}: {error:#}", bind.key);
@@ -691,6 +859,7 @@ mod tests {
             mods: vec!["SUPER".to_owned()],
             key: "t".to_owned(),
             event: "raisin:switch:t".to_owned(),
+            role: "the key for ghostty".to_owned(),
             flags: Flags::default(),
             ownership: Ownership::Exclusive,
             occupied: false,
@@ -703,6 +872,7 @@ mod tests {
             mods: vec!["SUPER".to_owned()],
             key: "Super_L".to_owned(),
             event: "raisin:confirm".to_owned(),
+            role: "confirming a switch".to_owned(),
             flags: Flags {
                 release: true,
                 transparent: true,
@@ -778,6 +948,24 @@ mod tests {
 
         assert!(remove.contains("e.bind:remove()"), "{remove}");
         assert!(!remove.contains("hl.unbind"), "{remove}");
+    }
+
+    #[test]
+    fn a_key_and_its_modifiers_are_read_back_the_way_they_were_written() {
+        assert_eq!(
+            parse_keys("SUPER + Super_L"),
+            Some((64, "super_l".to_owned()))
+        );
+        assert_eq!(parse_keys("SUPER + SHIFT + t"), Some((65, "t".to_owned())));
+        assert_eq!(parse_keys("Escape"), Some((0, "escape".to_owned())));
+        assert_eq!(parse_keys(""), None);
+
+        // Two binds are on the same key when they land in the same slot,
+        // however each was spelled.
+        assert_eq!(
+            parse_keys("SUPER + SHIFT + t"),
+            parse_keys("shift + super + T")
+        );
     }
 
     #[test]

@@ -22,13 +22,10 @@ pub(crate) fn default_path() -> Option<PathBuf> {
     Some(config_home.join("raisin").join("config.toml"))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
-    /// Which letter targets which application.
-    #[serde(default = "default_apps")]
-    pub(crate) apps: BTreeMap<char, Target>,
-    /// Keys that only do something while the switcher is on screen.
+    /// Every key raisin binds.
     #[serde(default)]
     pub(crate) keys: Keys,
     /// How the switcher behaves and how big it is.
@@ -75,18 +72,7 @@ impl Config {
 
     /// The application `Super` + `key` targets, if any.
     pub(crate) fn target(&self, key: char) -> Option<&Target> {
-        self.apps.get(&key)
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            apps: default_apps(),
-            keys: Keys::default(),
-            switcher: Switcher::default(),
-            previews: Previews::default(),
-        }
+        self.keys.apps.get(&key)
     }
 }
 
@@ -139,12 +125,18 @@ impl From<Entry> for Target {
     }
 }
 
-/// The keys that steer a switch already in progress. They're bound only while
-/// the switcher is on screen, so they belong to the applications underneath
-/// the rest of the time.
+/// Every key raisin binds: one per application, plus the ones that steer a
+/// switch already in progress.
+///
+/// The steering keys are bound only while the switcher is on screen, so they
+/// belong to the applications underneath the rest of the time.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Keys {
+    /// Which letter targets which application. `Super` and the letter starts
+    /// a switch; holding `Shift` as well walks the group the other way.
+    #[serde(default)]
+    pub(crate) apps: BTreeMap<char, Target>,
     /// Moves the highlight to the next window.
     #[serde(default)]
     pub(crate) next: Option<Key>,
@@ -159,6 +151,7 @@ pub(crate) struct Keys {
 impl Default for Keys {
     fn default() -> Self {
         Self {
+            apps: BTreeMap::new(),
             next: None,
             previous: None,
             cancel: default_cancel(),
@@ -276,17 +269,6 @@ impl Default for Previews {
     }
 }
 
-/// The applications raisin knows about with no configuration file to read.
-fn default_apps() -> BTreeMap<char, Target> {
-    [
-        ('i', Target::new("brave", Some("brave-browser"))),
-        ('s', Target::new("spotify", None)),
-        ('t', Target::new("ghostty", Some("com.mitchellh.ghostty"))),
-        ('w', Target::new("brave", Some("brave-browser"))),
-    ]
-    .into()
-}
-
 fn default_cancel() -> Key {
     Key {
         mods: Vec::new(),
@@ -326,7 +308,7 @@ mod tests {
     fn an_application_is_either_a_command_or_a_command_and_a_class() {
         let config = config(
             r#"
-            [apps]
+            [keys.apps]
             t = "ghostty"
             i = { command = "brave", app_id = "brave-browser" }
             "#,
@@ -352,23 +334,12 @@ mod tests {
         assert_eq!(config.switcher.delay, 150);
         assert_eq!(config.switcher.width, default_width());
         assert_eq!(config.keys.cancel.key, "Escape");
-        // An `[apps]` table replaces the defaults; leaving it out keeps them.
-        assert_eq!(config.apps, default_apps());
     }
 
     #[test]
-    fn listing_applications_replaces_the_defaults_rather_than_adding_to_them() {
-        let config = config(
-            r#"
-            [apps]
-            f = "firefox"
-            "#,
-        );
-
-        assert_eq!(
-            config.apps.keys().collect::<Vec<_>>(),
-            ['f'].iter().collect::<Vec<_>>()
-        );
+    fn nothing_is_bound_until_the_file_says_so() {
+        assert!(Config::default().keys.apps.is_empty());
+        assert!(config("").keys.apps.is_empty());
     }
 
     #[test]
@@ -423,10 +394,5 @@ mod tests {
         assert!(!config.previews.enabled);
         assert_eq!(config.previews.width, default_preview_width());
         assert!(config.switcher.icons);
-    }
-
-    #[test]
-    fn the_defaults_parse_as_an_empty_file() {
-        assert_eq!(config("").apps, default_apps());
     }
 }

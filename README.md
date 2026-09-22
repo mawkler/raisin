@@ -23,8 +23,8 @@ example from your Hyprland startup configuration:
 exec-once = raisin daemon
 ```
 
-It binds `Super` + a letter for every application in the table at the top of `src/bindings.rs`, so
-adding another letter is a line of Rust and a restart — no compositor configuration to edit.
+It binds `Super` + a letter for every application in `[keys.apps]`, so adding another letter is a
+line of configuration — no compositor configuration to edit, and no restart.
 
 - Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
 - Keep `Super` held a moment longer and the switcher appears: every open window, grouped by
@@ -48,19 +48,22 @@ Raisin reads `$XDG_CONFIG_HOME/raisin/config.toml` — usually `~/.config/raisin
 whichever file `raisin daemon --config <path>` names. Every setting has a default, so the file is
 optional, and only needs the parts you want to change.
 
-```toml
-# Which letter targets which application. Listing any replaces the built-in set.
-[apps]
-t = "ghostty"                                        # Super + t
-s = "spotify"
-i = { command = "brave", app_id = "brave-browser" }  # when the window class differs
+Raisin binds nothing until the file says so: without `[keys.apps]` the switcher runs but no key
+does anything.
 
-# Keys that only do something while the switcher is on screen. The rest of the
-# time they belong to whatever you're using.
+```toml
 [keys]
+# These only do something while the switcher is on screen. The rest of the time
+# they belong to whatever you're using.
 next = "Tab"              # move the highlight on
 previous = "SHIFT + Tab"  # and back
 cancel = "Escape"         # close without switching
+
+# Which letter targets which application, held with Super.
+[keys.apps]
+t = "ghostty"                                        # Super + t
+s = "spotify"
+i = { command = "brave", app_id = "brave-browser" }  # when the window class differs
 
 [switcher]
 delay = 90        # milliseconds Super has to stay held before the switcher appears
@@ -79,7 +82,10 @@ Holding `Shift` with an application's letter walks its windows the other way, th
 does. That needs no configuration.
 
 Saving the file is enough: raisin watches it and rebinds straight away, ending any switch that was
-in progress under the old keys. A setting the file misspells is an error — at startup it stops the
+in progress under the old keys. Raisin says so on startup when one of its keys is already bound in your Hyprland configuration, and
+when two of its own keys are the same key.
+
+A setting the file misspells is an error — at startup it stops the
 daemon, and on a reload it leaves the running configuration alone and says what was wrong, since a
 half-saved file is a normal thing for an editor to leave behind for a moment.
 
