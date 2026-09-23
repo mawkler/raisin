@@ -300,8 +300,6 @@ impl Overlay {
         };
 
         tile.add_css_class("selected");
-        // Focus is what scrolls a tile into view, and nothing else in the
-        // panel takes any.
         tile.grab_focus();
         self.selected.replace(Some(tile));
     }
