@@ -665,24 +665,22 @@ impl Binds {
         for bind in self.binds.iter_mut().chain(&mut self.session) {
             bind.occupied = occupied.others(bind) > 0;
 
-            if !bind.occupied || mentioned.insert(bind.slot(), ()).is_some() {
+            // A shared key isn't worth mentioning: raisin's bind joins what is
+            // there and nothing of the user's stops working. Only a key raisin
+            // takes for itself is news.
+            if !bind.occupied
+                || bind.ownership == Ownership::Shared
+                || mentioned.insert(bind.slot(), ()).is_some()
+            {
                 continue;
             }
 
-            match bind.ownership {
-                Ownership::Exclusive => eprintln!(
-                    "raisin: {} is already bound in your Hyprland configuration; raisin uses it \
-                     for {} while it runs, and `hyprctl reload` gives it back",
-                    bind.spelled(),
-                    bind.role
-                ),
-                Ownership::Shared => eprintln!(
-                    "raisin: {} is already bound in your Hyprland configuration; raisin's \
-                     binding for {} joins it rather than replacing it, so both will happen",
-                    bind.spelled(),
-                    bind.role
-                ),
-            }
+            eprintln!(
+                "raisin: {} is already bound in your Hyprland configuration; raisin uses it for \
+                 {} while it runs, and `hyprctl reload` gives it back",
+                bind.spelled(),
+                bind.role
+            );
         }
     }
 
