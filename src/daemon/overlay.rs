@@ -148,8 +148,9 @@ impl Overlay {
         scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
         scroll.set_propagate_natural_width(true);
         scroll.set_propagate_natural_height(true);
-        scroll.set_max_content_width(switcher.width);
-        scroll.set_max_content_height(switcher.max_height);
+        let (screen_width, screen_height) = screen();
+        scroll.set_max_content_width(switcher.width.pixels(screen_width));
+        scroll.set_max_content_height(switcher.max_height.pixels(screen_height));
 
         let footer = footer(keys);
 
@@ -190,8 +191,11 @@ impl Overlay {
         keys: &config::Keys,
         previews: &config::Previews,
     ) {
-        self.scroll.set_max_content_width(switcher.width);
-        self.scroll.set_max_content_height(switcher.max_height);
+        let (screen_width, screen_height) = screen();
+        self.scroll
+            .set_max_content_width(switcher.width.pixels(screen_width));
+        self.scroll
+            .set_max_content_height(switcher.max_height.pixels(screen_height));
         self.previews.set(*previews);
         self.icons.set(switcher.icons);
 
@@ -311,6 +315,21 @@ impl Overlay {
     pub(crate) fn hide(&self) {
         self.window.set_visible(false);
     }
+}
+
+/// How big the screen is, for sizes written as a portion of it. The first
+/// monitor, which is the only one for most people and a reasonable guess for
+/// everyone else.
+fn screen() -> (i32, i32) {
+    let monitor = gdk::Display::default()
+        .and_then(|display| display.monitors().item(0))
+        .and_downcast::<gdk::Monitor>();
+
+    monitor.map_or((1920, 1080), |monitor| {
+        let geometry = monitor.geometry();
+
+        (geometry.width(), geometry.height())
+    })
 }
 
 fn load_style() -> Result<()> {

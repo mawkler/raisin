@@ -236,12 +236,12 @@ pub(crate) struct Switcher {
     /// enough to feel immediate when the user does mean to look.
     #[serde(default = "default_delay")]
     pub(crate) delay: u64,
-    /// How wide the window is, in pixels.
+    /// How wide the window may grow before it scrolls.
     #[serde(default = "default_width")]
-    pub(crate) width: i32,
-    /// How tall its list may grow, in pixels, before it starts scrolling.
+    pub(crate) width: Size,
+    /// How tall it may grow.
     #[serde(default = "default_max_height")]
-    pub(crate) max_height: i32,
+    pub(crate) max_height: Size,
     /// Whether to show each application's icon beside its name.
     #[serde(default = "enabled")]
     pub(crate) icons: bool,
@@ -261,6 +261,55 @@ impl Default for Switcher {
             max_height: default_max_height(),
             icons: enabled(),
         }
+    }
+}
+
+/// A length, written either in pixels or as a portion of the screen: `900` or
+/// `"60%"`.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(try_from = "Measure")]
+pub(crate) enum Size {
+    Pixels(i32),
+    Portion(f32),
+}
+
+impl Size {
+    /// The size in pixels, for a screen this wide or this tall.
+    pub(crate) fn pixels(self, screen: i32) -> i32 {
+        match self {
+            Self::Pixels(pixels) => pixels,
+            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+            Self::Portion(portion) => (screen as f32 * portion) as i32,
+        }
+    }
+}
+
+/// A size as the configuration file writes it.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Measure {
+    Pixels(i32),
+    Portion(String),
+}
+
+impl TryFrom<Measure> for Size {
+    type Error = String;
+
+    fn try_from(measure: Measure) -> Result<Self, Self::Error> {
+        let portion = match measure {
+            Measure::Pixels(pixels) => return Ok(Self::Pixels(pixels)),
+            Measure::Portion(portion) => portion,
+        };
+
+        let percent = portion
+            .trim()
+            .strip_suffix('%')
+            .and_then(|percent| percent.trim().parse::<f32>().ok())
+            .ok_or_else(|| {
+                format!("'{portion}' is neither a number of pixels nor a percentage of the screen")
+            })?;
+
+        Ok(Self::Portion(percent / 100.0))
     }
 }
 
@@ -297,12 +346,12 @@ fn default_delay() -> u64 {
     90
 }
 
-fn default_width() -> i32 {
-    460
+fn default_width() -> Size {
+    Size::Portion(0.6)
 }
 
-fn default_max_height() -> i32 {
-    420
+fn default_max_height() -> Size {
+    Size::Portion(0.4)
 }
 
 fn enabled() -> bool {
@@ -423,6 +472,35 @@ mod tests {
         .expect_err("unknown fields should be refused");
 
         assert!(error.to_string().contains("dealy"), "{error}");
+    }
+
+    #[test]
+    fn a_size_is_pixels_or_a_share_of_the_screen() {
+        let config = config(
+            r#"
+            [switcher]
+            width = "60%"
+            max_height = 300
+            "#,
+        );
+
+        assert_eq!(config.switcher.width, Size::Portion(0.6));
+        assert_eq!(config.switcher.width.pixels(1920), 1152);
+        assert_eq!(config.switcher.max_height, Size::Pixels(300));
+        assert_eq!(config.switcher.max_height.pixels(1080), 300);
+    }
+
+    #[test]
+    fn a_size_that_is_neither_says_so() {
+        let error = toml::from_str::<Config>(
+            r#"
+            [switcher]
+            width = "wide"
+            "#,
+        )
+        .expect_err("'wide' is not a size");
+
+        assert!(error.to_string().contains("percentage"), "{error}");
     }
 
     #[test]

@@ -66,10 +66,10 @@ s = "spotify"
 i = { cmd = "brave", app_id = "brave-browser" }      # when the window class differs
 
 [switcher]
-delay = 90        # milliseconds Super has to stay held before the switcher appears
-width = 460       # pixels
-max_height = 420  # pixels; the list scrolls once it would grow past this
-icons = true      # show each application's icon beside its name
+delay = 90          # milliseconds Super has to stay held before the switcher appears
+width = "60%"       # of the screen, or a number of pixels like 900; it scrolls past this
+max_height = "40%"
+icons = true        # show each application's icon beside its name
 
 [previews]
 enabled = true    # show what each window looks like
