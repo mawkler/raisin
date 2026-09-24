@@ -9,7 +9,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
@@ -86,13 +86,72 @@ impl From<Client> for Window {
     }
 }
 
-/// Where Hyprland keeps the current instance's sockets.
-fn instance_dir() -> Result<PathBuf> {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").context("`$XDG_RUNTIME_DIR` is not set")?;
-    let instance = std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
-        .context("`$HYPRLAND_INSTANCE_SIGNATURE` is not set, is Hyprland running?")?;
+/// Where Hyprland keeps a running instance's sockets.
+///
+/// `$HYPRLAND_INSTANCE_SIGNATURE` says which instance a client belongs to, but
+/// a terminal outlives the session it was opened in, and the directory of a
+/// session that has gone stays behind. The variable is therefore a preference
+/// rather than an answer: raisin follows it while something is listening
+/// there, and otherwise looks for the Hyprland that is.
+pub(crate) fn instance_dir() -> Result<PathBuf> {
+    static RESOLVED: OnceLock<PathBuf> = OnceLock::new();
 
-    Ok(PathBuf::from(runtime_dir).join("hypr").join(instance))
+    if let Some(resolved) = RESOLVED.get() {
+        return Ok(resolved.clone());
+    }
+
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR").context("`$XDG_RUNTIME_DIR` is not set")?;
+    let signature = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok();
+    let instance = resolve(&PathBuf::from(runtime).join("hypr"), signature.as_deref())?;
+
+    let _ = RESOLVED.set(instance.clone());
+
+    Ok(instance)
+}
+
+/// Which of the instances under `hypr` to talk to.
+fn resolve(hypr: &Path, signature: Option<&str>) -> Result<PathBuf> {
+    if let Some(named) = signature.map(|signature| hypr.join(signature))
+        && listening(&named)
+    {
+        return Ok(named);
+    }
+
+    let mut running: Vec<_> = std::fs::read_dir(hypr)
+        .with_context(|| format!("failed to look in {}; is Hyprland running?", hypr.display()))?
+        .filter_map(Result::ok)
+        .map(|instance| instance.path())
+        .filter(|instance| listening(instance))
+        .collect();
+    running.sort();
+
+    match running.len() {
+        0 => anyhow::bail!("no running Hyprland found in {}", hypr.display()),
+        1 => {
+            if signature.is_some() {
+                eprintln!(
+                    "raisin: $HYPRLAND_INSTANCE_SIGNATURE names a Hyprland that has gone \
+                     (an old terminal, most likely); using the one that is running"
+                );
+            }
+
+            Ok(running.remove(0))
+        }
+        _ => anyhow::bail!(
+            "more than one Hyprland is running, and $HYPRLAND_INSTANCE_SIGNATURE doesn't name \
+             any of them; set it to the one raisin should use: {}",
+            running
+                .iter()
+                .filter_map(|instance| instance.file_name()?.to_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Whether an instance's directory belongs to a Hyprland that is still there.
+fn listening(instance: &Path) -> bool {
+    UnixStream::connect(instance.join(".socket.sock")).is_ok()
 }
 
 /// Sends `command` to Hyprland and returns what it answered.
@@ -849,7 +908,7 @@ impl compositor::Compositor for Compositor {
     }
 
     fn is_running(&self) -> bool {
-        std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+        instance_dir().is_ok()
     }
 }
 
@@ -887,6 +946,66 @@ mod tests {
             ownership: Ownership::Shared,
             occupied,
         }
+    }
+
+    /// A directory of instances, some of them still listening.
+    fn instances(
+        name: &str,
+        listening: &[&str],
+        gone: &[&str],
+    ) -> (PathBuf, Vec<std::os::unix::net::UnixListener>) {
+        let hypr = std::env::temp_dir().join(format!("raisin-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&hypr);
+
+        let sockets = listening
+            .iter()
+            .map(|instance| {
+                let directory = hypr.join(instance);
+                std::fs::create_dir_all(&directory).expect("failed to make an instance");
+
+                std::os::unix::net::UnixListener::bind(directory.join(".socket.sock"))
+                    .expect("failed to listen")
+            })
+            .collect();
+
+        for instance in gone {
+            std::fs::create_dir_all(hypr.join(instance)).expect("failed to make an instance");
+        }
+
+        (hypr, sockets)
+    }
+
+    #[test]
+    fn the_instance_named_by_the_environment_is_the_one_used() {
+        let (hypr, _sockets) = instances("named", &["live", "other"], &[]);
+
+        assert_eq!(resolve(&hypr, Some("live")).unwrap(), hypr.join("live"));
+    }
+
+    #[test]
+    fn a_signature_left_over_from_a_session_that_has_gone_falls_back() {
+        // A terminal opened before the session restarted still names the old
+        // instance, whose directory is still there.
+        let (hypr, _sockets) = instances("stale", &["live"], &["gone"]);
+
+        assert_eq!(resolve(&hypr, Some("gone")).unwrap(), hypr.join("live"));
+    }
+
+    #[test]
+    fn nothing_running_says_so() {
+        let (hypr, _sockets) = instances("none", &[], &["gone"]);
+        let error = resolve(&hypr, Some("gone")).expect_err("nothing is listening");
+
+        assert!(error.to_string().contains("no running Hyprland"), "{error}");
+    }
+
+    #[test]
+    fn several_running_and_no_way_to_tell_asks_which() {
+        let (hypr, _sockets) = instances("several", &["one", "two"], &[]);
+        let error = resolve(&hypr, Some("gone")).expect_err("two are listening");
+
+        assert!(error.to_string().contains("more than one"), "{error}");
+        assert!(error.to_string().contains("one, two"), "{error}");
     }
 
     #[test]

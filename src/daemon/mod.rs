@@ -46,10 +46,10 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
     let config = Rc::new(Config::load(path)?);
     let compositor = hyprland::Compositor;
 
-    anyhow::ensure!(
-        compositor.is_running(),
-        "raisin's switcher only supports Hyprland, which doesn't appear to be running"
-    );
+    // Resolved here so that a stale $HYPRLAND_INSTANCE_SIGNATURE, or more than
+    // one Hyprland running, is reported as itself rather than as a failure to
+    // install keybinds further down.
+    hyprland::instance_dir().context("raisin's switcher only supports Hyprland")?;
 
     // Claimed before anything else, so a second daemon fails fast instead of
     // fighting over the keybinds.
