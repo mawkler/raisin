@@ -300,14 +300,19 @@ impl Bind {
                 );
 
                 let body = match self.ownership {
+                    // `hl.unbind` destroys every bind on the key, so anything
+                    // raisin is still holding for it has to go first and by
+                    // handle. A handle whose bind was destroyed under it is
+                    // not inert: calling it takes the whole compositor down.
                     Ownership::Exclusive => format!(
-                        r#"if e then e.bind:remove() end hl.unbind("{}") __raisin["{}"] = {{ bind = {bind}, shared = false }}"#,
-                        self.keys(language),
-                        self.lua_name(),
+                        r#"if e then e.bind:remove() __raisin["{name}"] = nil end for n, v in pairs(__raisin) do if v.keys == "{keys}" then v.bind:remove() __raisin[n] = nil end end hl.unbind("{keys}") __raisin["{name}"] = {{ bind = {bind}, shared = false, keys = "{keys}" }}"#,
+                        keys = self.keys(language),
+                        name = self.lua_name(),
                     ),
                     Ownership::Shared => format!(
-                        r#"if e then e.bind:set_enabled(true) else __raisin["{}"] = {{ bind = {bind}, shared = true }} end"#,
-                        self.lua_name(),
+                        r#"if e then e.bind:set_enabled(true) else __raisin["{name}"] = {{ bind = {bind}, shared = true, keys = "{keys}" }} end"#,
+                        keys = self.keys(language),
+                        name = self.lua_name(),
                     ),
                 };
 
@@ -648,6 +653,7 @@ impl Binds {
             std::iter::once(forward).chain(backward)
         });
 
+
         let confirms = SUPER_KEYS.iter().map(|key| Bind {
             name: format!("confirm:{key}"),
             mods: vec!["SUPER".to_owned()],
@@ -678,9 +684,35 @@ impl Binds {
 
         session.extend(cancel_binds(&config.keys));
 
+        // A key configured with Shift of its own lands on the same key as
+        // some other key's backwards bind. Both would be installed, and
+        // whichever went second would unbind the first while raisin still
+        // held it. The configured key wins; the derived one is dropped.
+        let (forwards, backwards): (Vec<_>, Vec<_>) = switches
+            .chain(confirms)
+            .partition(|bind| !bind.name.starts_with("back:"));
+        let taken: HashMap<_, _> = forwards
+            .iter()
+            .map(|bind| (bind.slot(), bind.role.clone()))
+            .collect();
+        let (dropped, backwards): (Vec<_>, Vec<_>) = backwards
+            .into_iter()
+            .partition(|bind| taken.contains_key(&bind.slot()));
+
+        for bind in &dropped {
+            eprintln!(
+                "raisin: {} is {}, so it can't also be {}",
+                bind.spelled(),
+                taken[&bind.slot()],
+                bind.role,
+            );
+        }
+
+        let binds = forwards.into_iter().chain(backwards).collect();
+
         let mut binds = Self {
             language: config_language(),
-            binds: switches.chain(confirms).collect(),
+            binds,
             session,
         };
 
