@@ -224,12 +224,10 @@ impl Overlay {
 
         let previews = self.previews.get();
         let mut windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        let mut previewed = false;
 
         for row in session.rows() {
             match row {
                 Row::Group(name) => {
-                    previewed = previews.enabled && name == session.group();
                     windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
                     let block = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -250,8 +248,8 @@ impl Overlay {
                     } else {
                         &window.title
                     };
-                    let preview =
-                        (previewed && !window.identifier.is_empty()).then_some(previews.width);
+                    let preview = (previews.enabled && !window.identifier.is_empty())
+                        .then_some(previews.width);
 
                     let (tile, thumbnail) = tile(title, preview, previews.width);
 

@@ -103,12 +103,6 @@ impl Session {
         &self.label
     }
 
-    /// The windows of the application being switched to, most recently used
-    /// first.
-    pub(crate) fn group_windows(&self) -> &[Window] {
-        &self.groups[&self.group]
-    }
-
     /// The window that gets focused if the user confirms right now.
     pub(crate) fn selected_window(&self) -> &Window {
         &self.groups[&self.group][self.index]

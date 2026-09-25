@@ -24,7 +24,7 @@ use crate::compositor::integrations::hyprland::{
 };
 use crate::config::{Config, Target};
 use crate::preview::{Previews, Request, Thumbnail};
-use crate::switcher::{Direction, Session};
+use crate::switcher::{Direction, Row, Session};
 use controller::{Controller, Effect, Event};
 use overlay::Overlay;
 
@@ -185,19 +185,41 @@ impl Daemon {
                         .borrow()
                         .session()
                         .map(|session| {
-                            session
-                                .group_windows()
-                                .iter()
-                                .filter(|window| !window.identifier.is_empty())
-                                .map(|window| Request {
-                                    identifier: window.identifier.clone(),
-                                    label: if window.title.is_empty() {
-                                        window.app_id.clone()
-                                    } else {
-                                        format!("{} ({})", window.title, window.app_id)
-                                    },
-                                })
-                                .collect()
+                            // Every window in the strip gets a thumbnail, but
+                            // the targeted group is asked for first: captures
+                            // are taken in order and each one arrives on its
+                            // own, so the tiles being looked at fill first.
+                            let (mut targeted, mut rest) = (Vec::new(), Vec::new());
+                            let mut current = false;
+
+                            for row in session.rows() {
+                                match row {
+                                    Row::Group(name) => current = name == session.group(),
+                                    Row::Window { window, .. } => {
+                                        if window.identifier.is_empty() {
+                                            continue;
+                                        }
+
+                                        let request = Request {
+                                            identifier: window.identifier.clone(),
+                                            label: if window.title.is_empty() {
+                                                window.app_id.clone()
+                                            } else {
+                                                format!("{} ({})", window.title, window.app_id)
+                                            },
+                                        };
+
+                                        if current {
+                                            targeted.push(request);
+                                        } else {
+                                            rest.push(request);
+                                        }
+                                    }
+                                }
+                            }
+
+                            targeted.extend(rest);
+                            targeted
                         })
                         .unwrap_or_default();
 
