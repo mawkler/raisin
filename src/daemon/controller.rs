@@ -225,6 +225,7 @@ mod tests {
             title: format!("{app_id} {id}"),
             identifier: id.to_owned(),
             size: None,
+            initial_title: String::new(),
         }
     }
 

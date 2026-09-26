@@ -1,7 +1,7 @@
 //! The switcher window: a small dark panel, centred, above everything else.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result};
 use gtk4::prelude::*;
@@ -114,6 +114,9 @@ pub(crate) struct Overlay {
     textures: RefCell<HashMap<String, gdk::MemoryTexture>>,
     previews: Cell<config::Previews>,
     icons: Cell<bool>,
+    /// What to call each application, by `app_id`, for the ones the user would
+    /// rather name themselves.
+    names: RefCell<BTreeMap<String, String>>,
 }
 
 impl Overlay {
@@ -122,6 +125,7 @@ impl Overlay {
         switcher: &config::Switcher,
         keys: &config::Keys,
         previews: &config::Previews,
+        names: &BTreeMap<String, String>,
     ) -> Result<Self> {
         load_style().context("failed to load the switcher's stylesheet")?;
 
@@ -187,6 +191,7 @@ impl Overlay {
             textures: RefCell::new(HashMap::new()),
             previews: Cell::new(*previews),
             icons: Cell::new(switcher.icons),
+            names: RefCell::new(names.clone()),
         })
     }
 
@@ -196,6 +201,7 @@ impl Overlay {
         switcher: &config::Switcher,
         keys: &config::Keys,
         previews: &config::Previews,
+        names: &BTreeMap<String, String>,
     ) {
         let (screen_width, screen_height) = screen();
         self.scroll
@@ -204,6 +210,7 @@ impl Overlay {
             .set_max_content_height(switcher.max_height.pixels(screen_height));
         self.previews.set(*previews);
         self.icons.set(switcher.icons);
+        self.names.replace(names.clone());
 
         // A texture captured at the old width would be wider than the frame
         // asks for, and a picture takes the room its texture wants, so keeping
@@ -237,13 +244,18 @@ impl Overlay {
 
         for row in session.rows() {
             match row {
-                Row::Group(name) => {
+                Row::Group { app_id, name } => {
+                    let name = self.name(app_id, name);
                     windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
                     let block = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+                    // The icon is still looked up by `app_id`: it is what the
+                    // desktop entry is named after, not what the window calls
+                    // itself.
                     block.append(&group_header(
-                        name,
-                        triggers.get(name).map(String::as_str),
+                        &name,
+                        app_id,
+                        triggers.get(app_id).map(String::as_str),
                         self.icons.get(),
                     ));
                     block.append(&windows);
@@ -289,8 +301,17 @@ impl Overlay {
 
     /// Names the application the switch now points at.
     pub(crate) fn set_heading(&self, session: &Session) {
-        self.heading
-            .set_text(&format!("Switch to {}", session.label()));
+        let name = self.name(session.group(), session.label());
+
+        self.heading.set_text(&format!("Switch to {name}"));
+    }
+
+    /// What to call an application: what the user called it, if they said.
+    fn name(&self, app_id: &str, otherwise: &str) -> String {
+        self.names
+            .borrow()
+            .get(app_id)
+            .map_or_else(|| otherwise.to_owned(), Clone::clone)
     }
 
     /// Remembers what a window looks like, and shows it if the window still
@@ -389,10 +410,10 @@ fn line(label: &gtk4::Label) {
 }
 
 /// An application's name, its icon, and the key that switches to it.
-fn group_header(name: &str, trigger: Option<&str>, icons: bool) -> gtk4::Box {
+fn group_header(name: &str, app_id: &str, trigger: Option<&str>, icons: bool) -> gtk4::Box {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
 
-    if let Some(icon) = icons.then(|| app_icon(name)).flatten() {
+    if let Some(icon) = icons.then(|| app_icon(app_id)).flatten() {
         header.append(&icon);
     }
 

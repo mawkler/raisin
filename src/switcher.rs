@@ -47,11 +47,41 @@ pub(crate) enum Direction {
     Backward,
 }
 
+/// What to call a group on screen.
+///
+/// Applications put their own name in a window's title before they have a
+/// document to name instead, so the name a group's windows opened under is
+/// usually the application's — `Ghostty` rather than `com.mitchellh.ghostty`.
+/// It isn't guaranteed: a window that was still loading may have said
+/// something useless, and two windows of one application may disagree, so the
+/// name most of them opened under wins and the `app_id` is the fallback.
+fn group_name<'a>(app_id: &'a str, windows: &'a [Window]) -> &'a str {
+    let names = windows
+        .iter()
+        .map(|window| window.initial_title.as_str())
+        .filter(|name| !name.is_empty());
+
+    let mut best: Option<(&str, usize)> = None;
+
+    for name in names.clone() {
+        let votes = names.clone().filter(|other| *other == name).count();
+
+        // Windows come most recently used first, so an earlier one keeps the
+        // name when the vote is tied.
+        if best.is_none_or(|(_, most)| votes > most) {
+            best = Some((name, votes));
+        }
+    }
+
+    best.map_or(app_id, |(name, _)| name)
+}
+
 /// One line of the switcher's list.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Row<'a> {
-    /// A group's label.
-    Group(&'a str),
+    /// A group: the `app_id` everything about it is keyed by, and what to call
+    /// it on screen.
+    Group { app_id: &'a str, name: &'a str },
     /// A window, and whether it's the one that would be focused right now.
     Window { window: &'a Window, selected: bool },
 }
@@ -141,14 +171,17 @@ impl Session {
     /// Every line to display, in order: each group's label followed by its
     /// windows.
     pub(crate) fn rows(&self) -> impl Iterator<Item = Row<'_>> {
-        self.groups.iter().flat_map(move |(name, windows)| {
-            let group = std::iter::once(Row::Group(name));
+        self.groups.iter().flat_map(move |(app_id, windows)| {
+            let group = std::iter::once(Row::Group {
+                app_id,
+                name: group_name(app_id, windows),
+            });
             let windows = windows
                 .iter()
                 .enumerate()
                 .map(move |(index, window)| Row::Window {
                     window,
-                    selected: name == &self.group && index == self.index,
+                    selected: app_id == &self.group && index == self.index,
                 });
 
             group.chain(windows)
@@ -196,6 +229,7 @@ mod tests {
             title: title.to_owned(),
             identifier: id.to_owned(),
             size: None,
+            initial_title: String::new(),
         }
     }
 
@@ -380,6 +414,32 @@ mod tests {
     }
 
     #[test]
+    fn a_group_is_named_by_what_most_of_its_windows_opened_as() {
+        let named = |initial_title: &str| Window {
+            initial_title: initial_title.to_owned(),
+            ..window("1", "com.mitchellh.ghostty", "a document")
+        };
+
+        // What most of them opened as wins, however they are titled now.
+        assert_eq!(
+            group_name(
+                "com.mitchellh.ghostty",
+                &[named("~/notes"), named("Ghostty"), named("Ghostty")]
+            ),
+            "Ghostty"
+        );
+
+        // A tie goes to the most recently used window, which comes first.
+        assert_eq!(
+            group_name("brave-browser", &[named("Brave"), named("New Tab")]),
+            "Brave"
+        );
+
+        // A window that never said falls back to the app_id.
+        assert_eq!(group_name("neovide", &[named("")]), "neovide");
+    }
+
+    #[test]
     fn rows_list_every_window_under_its_group() {
         let session = session(None);
         let rows: Vec<_> = session.rows().collect();
@@ -387,12 +447,18 @@ mod tests {
         assert_eq!(
             rows,
             [
-                Row::Group("brave-browser"),
+                Row::Group {
+                    app_id: "brave-browser",
+                    name: "brave-browser"
+                },
                 Row::Window {
                     window: &windows()[1],
                     selected: false
                 },
-                Row::Group("com.mitchellh.ghostty"),
+                Row::Group {
+                    app_id: "com.mitchellh.ghostty",
+                    name: "com.mitchellh.ghostty"
+                },
                 Row::Window {
                     window: &windows()[0],
                     selected: true

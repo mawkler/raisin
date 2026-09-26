@@ -49,6 +49,7 @@ impl compositor::Compositor for Compositor {
             title: window.title,
             identifier: String::new(),
             size: None,
+            initial_title: String::new(),
         }))
     }
 
@@ -72,6 +73,7 @@ impl compositor::Compositor for Compositor {
                 title: window.title,
                 identifier: String::new(),
                 size: None,
+                initial_title: String::new(),
             })
             .collect();
 

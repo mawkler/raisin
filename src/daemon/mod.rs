@@ -64,8 +64,13 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
 
     let daemon = Rc::new(Daemon {
         controller: RefCell::new(Controller::default()),
-        overlay: Overlay::new(&config.switcher, &config.keys, &config.previews)
-            .context("failed to build the switcher window")?,
+        overlay: Overlay::new(
+            &config.switcher,
+            &config.keys,
+            &config.previews,
+            &config.names,
+        )
+        .context("failed to build the switcher window")?,
         compositor,
         binds: RefCell::new(binds),
         config: RefCell::new(config),
@@ -136,8 +141,12 @@ impl Daemon {
 
         match Binds::install(&config) {
             Ok(binds) => {
-                self.overlay
-                    .reconfigure(&config.switcher, &config.keys, &config.previews);
+                self.overlay.reconfigure(
+                    &config.switcher,
+                    &config.keys,
+                    &config.previews,
+                    &config.names,
+                );
                 self.binds.replace(Rc::new(binds));
                 self.config.replace(config);
             }
@@ -245,7 +254,7 @@ impl Daemon {
 
         for row in session.rows() {
             match row {
-                Row::Group(name) => current = name == session.group(),
+                Row::Group { app_id, .. } => current = app_id == session.group(),
                 Row::Window { window, .. } => {
                     if window.identifier.is_empty() {
                         continue;

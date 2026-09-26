@@ -34,6 +34,25 @@ pub(crate) struct Config {
     /// The thumbnails of the windows being switched between.
     #[serde(default)]
     pub(crate) previews: Previews,
+    /// What to call an application on screen, by the `app_id` its windows
+    /// carry. Without an entry a group is named after the title its windows
+    /// opened under, which is usually the application's own name but not
+    /// always the one worth showing: Brave opens windows called `New Tab -
+    /// Brave`.
+    #[serde(default, deserialize_with = "lowercased_keys")]
+    pub(crate) names: BTreeMap<String, String>,
+}
+
+/// `app_id`s are compared in lowercase, the same way windows are grouped by
+/// them, so a name written any other way still finds its application.
+fn lowercased_keys<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(BTreeMap::<String, String>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(app_id, name)| (app_id.to_lowercase(), name))
+        .collect())
 }
 
 impl Config {

@@ -19,6 +19,10 @@ pub(crate) struct Window {
     /// come back. `None` when the compositor doesn't say, and the tile falls
     /// back to a common shape until the capture arrives.
     pub size: Option<(u32, u32)>,
+    /// What the window called itself when it opened. Applications usually put
+    /// their own name there before they have a document to name instead, which
+    /// makes it a far better label for a group than the Wayland class.
+    pub initial_title: String,
 }
 
 impl PartialEq for Window {
