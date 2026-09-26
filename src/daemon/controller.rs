@@ -38,6 +38,10 @@ pub(crate) enum Effect {
     ScheduleReveal { session: u64 },
     /// Fill the overlay with the current session's windows.
     Fill,
+    /// Say which application the switch is now for. The windows on screen are
+    /// every window either way, so pointing the switch at another application
+    /// changes the heading and the highlight and nothing else.
+    Retitle,
     /// Move the overlay's highlight to the selected window.
     Highlight,
     /// Put the overlay on screen.
@@ -125,7 +129,7 @@ impl Controller {
             // The selection moved, but there's nothing on screen to update.
             Retarget::Group { .. } if !self.shown => vec![],
             Retarget::Group { same_group: true } => vec![Effect::Highlight],
-            Retarget::Group { same_group: false } => vec![Effect::Fill, Effect::Highlight],
+            Retarget::Group { same_group: false } => vec![Effect::Retitle, Effect::Highlight],
         }
     }
 
@@ -337,7 +341,7 @@ mod tests {
 
         assert_eq!(
             controller.handle(trigger("brave")),
-            [Effect::Fill, Effect::Highlight]
+            [Effect::Retitle, Effect::Highlight]
         );
         assert_eq!(
             controller.handle(Event::Confirm),

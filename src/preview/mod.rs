@@ -63,6 +63,9 @@ impl Previews {
 
     /// Asks for these windows, in this order, instead of whatever was being
     /// captured before.
+    ///
+    /// Every call names every window wanted rather than the ones that changed,
+    /// which is what lets the next call abandon this one part-way through.
     pub(crate) fn capture(&self, windows: Vec<Request>, width: u32) {
         let _ = self
             .commands
@@ -96,15 +99,21 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
 
         // A window that didn't come back gets one more go at the end, once
         // whatever the compositor was busy with has passed.
-        let mut failed = match capture(&mut capturer, windows, width, thumbnails) {
+        let mut failed = match capture(&mut capturer, windows, width, thumbnails, commands) {
             Ok(failed) => failed,
             Err(Gone) => return,
         };
 
-        if !failed.is_empty() && commands.is_empty() {
+        // Nothing more to say about a batch that was given up on: the
+        // windows it never reached aren't failures.
+        if !commands.is_empty() {
+            continue;
+        }
+
+        if !failed.is_empty() {
             let retrying = failed.into_iter().map(|(window, _)| window).collect();
 
-            failed = match capture(&mut capturer, retrying, width, thumbnails) {
+            failed = match capture(&mut capturer, retrying, width, thumbnails, commands) {
                 Ok(failed) => failed,
                 Err(Gone) => return,
             };
@@ -118,15 +127,25 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
 struct Gone;
 
 /// Captures each window in turn, returning the ones that didn't come back.
+///
+/// Stops as soon as another request turns up. A capture takes as long as the
+/// compositor takes to draw a frame, so a batch overtaken half way through
+/// would otherwise keep the one that replaced it waiting on windows nobody is
+/// looking at any more.
 fn capture(
     capturer: &mut Capturer,
     windows: Vec<Request>,
     width: u32,
     thumbnails: &Sender<Thumbnail>,
+    commands: &Receiver<Command>,
 ) -> Result<Vec<(Request, anyhow::Error)>, Gone> {
     let mut failed = Vec::new();
 
     for window in windows {
+        if !commands.is_empty() {
+            break;
+        }
+
         match capturer.capture(&window.identifier, width) {
             Ok(thumbnail) => {
                 if thumbnails.send_blocking(thumbnail).is_err() {

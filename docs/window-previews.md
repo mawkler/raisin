@@ -85,9 +85,10 @@ src/daemon/overlay.rs        a GdkTexture per row, placeholder until one arrives
   so a 4K window is a 33 MB copy; once several windows are captured at once, switch to
   `gdk::DmabufTextureBuilder` (GTK 4.14+, `v4_14` on the gtk4 crate) and let the GPU do the
   scaling.
-- **Where it hooks in.** `Effect::Show` starts captures for the group being shown; `Effect::Fill`
-  re-targets them when the user swaps application; ending a session cancels them. Never on
-  `Effect::ScheduleReveal`, which is what keeps a fast tap free of work.
+- **Where it hooks in.** `Effect::Fill` starts captures once the switcher is on screen, and
+  `Effect::Retitle` re-orders them when the user swaps application, so the group now being looked
+  at is captured first; ending a session cancels them. Never on `Effect::ScheduleReveal`, which is
+  what keeps a fast tap free of work.
 - **One frame, not a stream.** An `ext-image-copy-capture` session delivers frames continuously;
   raisin captures one per window per reveal and stops. Content that changes while the switcher is
   open is not worth a frame loop.
@@ -100,7 +101,7 @@ src/daemon/overlay.rs        a GdkTexture per row, placeholder until one arrives
 | A client hasn't drawn since it was last visible | Whatever it last drew, which is what every other switcher shows too. |
 | Capture takes longer than the switch | The row keeps its placeholder, the switch is unaffected. |
 | XWayland windows | Expected to work through the same path; worth an explicit test, since XWayland surfaces have bitten screencopy implementations before. |
-| A huge window, or many at once | Cap concurrent captures, capture only the group being shown, and prefer dmabuf. |
+| A huge window, or many at once | Captures run one at a time, the group being switched to first, and a newer request abandons whatever is still running. |
 
 ## What was built
 
@@ -133,10 +134,21 @@ Super came up while captures were in flight.
   swapping application instant at proportionally more cost.
 - **XWayland**, which should work through the same path but has not been tried.
 
+## Settled since
+
+- **Layout.** Every window gets a thumbnail, not only the group being switched between: the strip
+  runs sideways, so a thumbnail on every tile costs width rather than height.
+- **Previews survive a session**, cached by identifier, so a switcher opened a second time shows
+  windows rather than empty boxes. The open question was whether a stale thumbnail is worse than
+  none; it isn't. The cache is keyed by window, so it can never show one window's contents under
+  another's name, and a fresh capture replaces it as soon as one arrives — the same "whatever it
+  last drew" the table above already accepts. The cache is cleared when the configured width
+  changes, since a texture captured at the old size would widen its tile.
+- **Retargeting doesn't rebuild.** Pointing the switch at another application changes the heading
+  and the highlight only. The strip already holds every window, so there is nothing to rebuild,
+  and the thumbnails stay where they are.
+
 ## Open questions
 
-- **Layout.** Settled for now by giving thumbnails only to the group being switched between, which
-  keeps the panel the size it was for every other group. A strip of thumbnails above the list is
-  still the other option if the rows start to feel tall.
-- **Whether previews should survive a session**, cached by identifier, so the second switch in a row
-  is populated immediately. Cheap, but a stale thumbnail is worse than no thumbnail.
+- Whether a strip of thumbnails above the list would beat one per tile, if the tiles start to feel
+  wide.

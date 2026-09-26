@@ -179,56 +179,22 @@ impl Daemon {
                 // Capturing starts here rather than when the key was pressed:
                 // Fill only happens once the switcher is actually on screen,
                 // so a tap quick enough to skip it captures nothing at all.
-                if config.previews.enabled {
-                    let windows = self
-                        .controller
-                        .borrow()
-                        .session()
-                        .map(|session| {
-                            // Every window in the strip gets a thumbnail, but
-                            // the targeted group is asked for first: captures
-                            // are taken in order and each one arrives on its
-                            // own, so the tiles being looked at fill first.
-                            let (mut targeted, mut rest) = (Vec::new(), Vec::new());
-                            let mut current = false;
+                self.capture(&config);
+            }
+            // The strip already holds every window, so pointing the switch at
+            // another application leaves it alone. Only the heading changes —
+            // and which windows are worth capturing first.
+            Effect::Retitle => {
+                let config = self.config();
+                let controller = self.controller.borrow();
+                let Some(session) = controller.session() else {
+                    return;
+                };
 
-                            for row in session.rows() {
-                                match row {
-                                    Row::Group(name) => current = name == session.group(),
-                                    Row::Window { window, .. } => {
-                                        if window.identifier.is_empty() {
-                                            continue;
-                                        }
+                self.overlay.set_heading(session);
+                drop(controller);
 
-                                        let request = Request {
-                                            identifier: window.identifier.clone(),
-                                            label: if window.title.is_empty() {
-                                                window.app_id.clone()
-                                            } else {
-                                                format!("{} ({})", window.title, window.app_id)
-                                            },
-                                        };
-
-                                        if current {
-                                            targeted.push(request);
-                                        } else {
-                                            rest.push(request);
-                                        }
-                                    }
-                                }
-                            }
-
-                            targeted.extend(rest);
-                            targeted
-                        })
-                        .unwrap_or_default();
-
-                    // Captured at the size it will be shown at: a picture
-                    // asks for as much room as its texture is wide, so a
-                    // larger one would stretch the panel rather than sharpen
-                    // the thumbnail.
-                    self.previews.capture(windows, config.previews.width);
-                }
+                self.capture(&config);
             }
             Effect::Highlight => {
                 if let Some(session) = self.controller.borrow().session() {
@@ -255,6 +221,61 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    /// Asks for a thumbnail of every window on screen, the group being
+    /// switched to first: captures are taken in order and each one arrives on
+    /// its own, so the tiles being looked at fill before the rest.
+    ///
+    /// Every request names every window that is wanted rather than the ones
+    /// that changed, which is what lets a later request replace this one
+    /// outright.
+    fn capture(&self, config: &Config) {
+        if !config.previews.enabled {
+            return;
+        }
+
+        let controller = self.controller.borrow();
+        let Some(session) = controller.session() else {
+            return;
+        };
+
+        let (mut targeted, mut rest) = (Vec::new(), Vec::new());
+        let mut current = false;
+
+        for row in session.rows() {
+            match row {
+                Row::Group(name) => current = name == session.group(),
+                Row::Window { window, .. } => {
+                    if window.identifier.is_empty() {
+                        continue;
+                    }
+
+                    let request = Request {
+                        identifier: window.identifier.clone(),
+                        label: if window.title.is_empty() {
+                            window.app_id.clone()
+                        } else {
+                            format!("{} ({})", window.title, window.app_id)
+                        },
+                    };
+
+                    if current {
+                        targeted.push(request);
+                    } else {
+                        rest.push(request);
+                    }
+                }
+            }
+        }
+
+        targeted.extend(rest);
+        drop(controller);
+
+        // Captured at the size it will be shown at: a picture asks for as much
+        // room as its texture is wide, so a larger one would stretch the panel
+        // rather than sharpen the thumbnail.
+        self.previews.capture(targeted, config.previews.width);
     }
 
     /// Fills the overlay from the switch in progress, and says what the
@@ -490,7 +511,7 @@ fn watch_thumbnails(daemon: &Rc<Daemon>, thumbnails: async_channel::Receiver<Thu
 
     glib::MainContext::default().spawn_local(async move {
         while let Ok(thumbnail) = thumbnails.recv().await {
-            daemon.overlay.set_thumbnail(&thumbnail);
+            daemon.overlay.set_thumbnail(thumbnail);
         }
     });
 }

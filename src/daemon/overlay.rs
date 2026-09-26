@@ -107,6 +107,11 @@ pub(crate) struct Overlay {
     /// Where each window's thumbnail goes once it has been captured, by the
     /// identifier the capture comes back with.
     thumbnails: RefCell<HashMap<String, gtk4::Picture>>,
+    /// What each window last looked like. A picture only holds its thumbnail
+    /// until the strip is rebuilt; keeping the texture as well is what lets a
+    /// switcher open showing windows rather than empty boxes, until the
+    /// captures for this session come in behind it.
+    textures: RefCell<HashMap<String, gdk::MemoryTexture>>,
     previews: Cell<config::Previews>,
     icons: Cell<bool>,
 }
@@ -179,6 +184,7 @@ impl Overlay {
             scroll,
             footer: RefCell::new(footer),
             thumbnails: RefCell::new(HashMap::new()),
+            textures: RefCell::new(HashMap::new()),
             previews: Cell::new(*previews),
             icons: Cell::new(switcher.icons),
         })
@@ -199,6 +205,11 @@ impl Overlay {
         self.previews.set(*previews);
         self.icons.set(switcher.icons);
 
+        // A texture captured at the old width would be wider than the frame
+        // asks for, and a picture takes the room its texture wants, so keeping
+        // these would widen the tiles until fresh captures arrived.
+        self.textures.borrow_mut().clear();
+
         // The footer names the keys, so it's rebuilt rather than edited.
         let footer = footer(keys);
         self.panel.remove(&*self.footer.borrow());
@@ -209,11 +220,10 @@ impl Overlay {
     /// Lays out every open window, its application's key beside the
     /// application's name, with the switch's own application named at the top.
     ///
-    /// Only the windows being switched between get a thumbnail: they are the
-    /// ones the user is choosing among.
+    /// Every window gets a thumbnail, and one already captured is put back
+    /// straight away, so rebuilding the strip doesn't empty it.
     pub(crate) fn fill(&self, session: &Session, triggers: &HashMap<String, String>) {
-        self.heading
-            .set_text(&format!("Switch to {}", session.label()));
+        self.set_heading(session);
 
         while let Some(block) = self.strip.first_child() {
             self.strip.remove(&block);
@@ -254,6 +264,10 @@ impl Overlay {
                     let (tile, thumbnail) = tile(title, preview, previews.width);
 
                     if let Some(thumbnail) = thumbnail {
+                        if let Some(texture) = self.textures.borrow().get(&window.identifier) {
+                            thumbnail.set_paintable(Some(texture));
+                        }
+
                         self.thumbnails
                             .borrow_mut()
                             .insert(window.identifier.clone(), thumbnail);
@@ -264,25 +278,47 @@ impl Overlay {
                 }
             }
         }
+
+        // Windows that have since closed would otherwise be remembered for as
+        // long as the daemon runs.
+        let open = self.thumbnails.borrow();
+        self.textures
+            .borrow_mut()
+            .retain(|identifier, _| open.contains_key(identifier));
     }
 
-    /// Puts a captured window into the row waiting for it, if that row is
-    /// still on screen.
-    pub(crate) fn set_thumbnail(&self, thumbnail: &Thumbnail) {
-        let Some(picture) = self.thumbnails.borrow().get(&thumbnail.identifier).cloned() else {
-            return;
-        };
+    /// Names the application the switch now points at.
+    pub(crate) fn set_heading(&self, session: &Session) {
+        self.heading
+            .set_text(&format!("Switch to {}", session.label()));
+    }
 
-        let pixels = glib::Bytes::from_owned(thumbnail.pixels.clone());
+    /// Remembers what a window looks like, and shows it if the window still
+    /// has a tile on screen.
+    pub(crate) fn set_thumbnail(&self, thumbnail: Thumbnail) {
+        // A capture asked for before the configured width shrank would take
+        // more room than its frame allows, widening the tile it sits in.
+        if thumbnail.width > self.previews.get().width {
+            return;
+        }
+
+        let width = thumbnail.width;
+        let pixels = glib::Bytes::from_owned(thumbnail.pixels);
         let texture = gdk::MemoryTexture::new(
-            thumbnail.width as i32,
+            width as i32,
             thumbnail.height as i32,
             gdk::MemoryFormat::B8g8r8a8Premultiplied,
             &pixels,
-            thumbnail.width as usize * 4,
+            width as usize * 4,
         );
 
-        picture.set_paintable(Some(&texture));
+        if let Some(picture) = self.thumbnails.borrow().get(&thumbnail.identifier) {
+            picture.set_paintable(Some(&texture));
+        }
+
+        self.textures
+            .borrow_mut()
+            .insert(thumbnail.identifier, texture);
     }
 
     /// Marks the window that a release of Super would focus, scrolling it
