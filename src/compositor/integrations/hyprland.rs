@@ -438,12 +438,12 @@ fn session_binds(name: &str, key: &Key, event: &str) -> Vec<Bind> {
                 key: key.key.clone(),
                 event: event.to_owned(),
                 role: name.to_owned(),
-                flags: Flags {
-                    // A bind left behind by a daemon that crashed can then
-                    // never swallow anyone's key.
-                    non_consuming: true,
-                    ..Flags::default()
-                },
+                // These keys are only bound while the switcher is on screen,
+                // and there they belong to it: passing them on as well would
+                // walk the switcher and type into the window behind it at the
+                // same time. A daemon that dies holding them leaves them
+                // behind, which the next run clears.
+                flags: Flags::default(),
                 ownership: Ownership::Shared,
                 occupied: false,
             }
@@ -474,7 +474,6 @@ fn cancel_binds(keys: &Keys) -> Vec<Bind> {
         event: CANCEL_EVENT.to_owned(),
         role: "cancel".to_owned(),
         flags: Flags {
-            non_consuming: true,
             ignore_mods: true,
             ..Flags::default()
         },
@@ -653,7 +652,6 @@ impl Binds {
             std::iter::once(forward).chain(backward)
         });
 
-
         let confirms = SUPER_KEYS.iter().map(|key| Bind {
             name: format!("confirm:{key}"),
             mods: vec!["SUPER".to_owned()],
@@ -719,6 +717,12 @@ impl Binds {
         binds.warn_about_conflicts(config);
         binds.forget_stale_lua_binds();
         binds.add()?;
+
+        // The keys that steer a switch swallow what they're bound to, so they
+        // belong to the switcher only while it's on screen. A run that ended
+        // without giving them back — a crash, most likely — would otherwise
+        // leave them taken until the next switch happened to end tidily.
+        binds.release_session_keys();
 
         Ok(binds)
     }
