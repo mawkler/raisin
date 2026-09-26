@@ -71,6 +71,12 @@ window.raisin > widget {
     background-color: alpha(#000000, 0.25);
 }
 
+/* Stands in for a window the compositor wouldn't copy. Faint, so a tile that
+   has its own picture never looks like one that hasn't. */
+.standin {
+    opacity: 0.35;
+}
+
 .footer {
     color: #6e7688;
     font-size: 11px;
@@ -92,6 +98,24 @@ scrollbar {
 }
 ";
 
+/// A tile's thumbnail: the picture a capture goes into, and the icon shown in
+/// its place until one arrives — or for good, when none ever does.
+struct Thumbnailed {
+    picture: gtk4::Picture,
+    standin: Option<gtk4::Image>,
+}
+
+impl Thumbnailed {
+    /// Puts a capture in the tile, and takes the icon standing in for it away.
+    fn show(&self, texture: &gdk::MemoryTexture) {
+        self.picture.set_paintable(Some(texture));
+
+        if let Some(standin) = &self.standin {
+            standin.set_visible(false);
+        }
+    }
+}
+
 pub(crate) struct Overlay {
     window: gtk4::Window,
     heading: gtk4::Label,
@@ -106,7 +130,7 @@ pub(crate) struct Overlay {
     footer: RefCell<gtk4::Box>,
     /// Where each window's thumbnail goes once it has been captured, by the
     /// identifier the capture comes back with.
-    thumbnails: RefCell<HashMap<String, gtk4::Picture>>,
+    thumbnails: RefCell<HashMap<String, Thumbnailed>>,
     /// What each window last looked like. A picture only holds its thumbnail
     /// until the strip is rebuilt; keeping the texture as well is what lets a
     /// switcher open showing windows rather than empty boxes, until the
@@ -273,11 +297,12 @@ impl Overlay {
                     let preview = (previews.enabled && !window.identifier.is_empty())
                         .then_some(previews.height);
 
-                    let (tile, thumbnail) = tile(title, preview, shape(window.size));
+                    let (tile, thumbnail) =
+                        tile(title, preview, shape(window.size), &window.app_id);
 
                     if let Some(thumbnail) = thumbnail {
                         if let Some(texture) = self.textures.borrow().get(&window.identifier) {
-                            thumbnail.set_paintable(Some(texture));
+                            thumbnail.show(texture);
                         }
 
                         self.thumbnails
@@ -304,6 +329,12 @@ impl Overlay {
         let name = self.name(session.group(), session.label());
 
         self.heading.set_text(&format!("Switch to {name}"));
+    }
+
+    /// Whether this window has been captured at some point, and so has
+    /// something to show while a fresh capture is taken.
+    pub(crate) fn captured(&self, identifier: &str) -> bool {
+        self.textures.borrow().contains_key(identifier)
     }
 
     /// What to call an application: what the user called it, if they said.
@@ -333,8 +364,8 @@ impl Overlay {
             width as usize * 4,
         );
 
-        if let Some(picture) = self.thumbnails.borrow().get(&thumbnail.identifier) {
-            picture.set_paintable(Some(&texture));
+        if let Some(thumbnailed) = self.thumbnails.borrow().get(&thumbnail.identifier) {
+            thumbnailed.show(&texture);
         }
 
         self.textures
@@ -459,7 +490,12 @@ fn app_icon(app_id: &str) -> Option<gtk4::Image> {
 ///
 /// The room for a thumbnail is made now rather than when the capture arrives,
 /// so tiles don't jump about as they turn up.
-fn tile(title: &str, preview: Option<u32>, shape: f32) -> (gtk4::Box, Option<gtk4::Picture>) {
+fn tile(
+    title: &str,
+    preview: Option<u32>,
+    shape: f32,
+    app_id: &str,
+) -> (gtk4::Box, Option<Thumbnailed>) {
     let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     tile.add_css_class("tile");
     tile.set_focusable(true);
@@ -476,16 +512,32 @@ fn tile(title: &str, preview: Option<u32>, shape: f32) -> (gtk4::Box, Option<gtk
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let width = (height as f32 * shape) as i32;
 
+        // Some windows never come back: a compositor only copies what it is
+        // drawing, and a browser showing a heavy page can go a long time
+        // without drawing one it isn't showing. The application's own icon
+        // says which window the tile is, where an empty frame says only that
+        // something is broken.
+        let standin = app_icon(app_id).inspect(|icon| {
+            icon.set_pixel_size(height as i32 / 2);
+            icon.add_css_class("standin");
+            icon.set_vexpand(true);
+        });
+
         let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         frame.add_css_class("thumbnail");
         frame.set_size_request(width, height as i32);
+
+        if let Some(standin) = &standin {
+            frame.append(standin);
+        }
+
         frame.append(&picture);
         tile.append(&frame);
 
         // A tall, narrow window would otherwise leave no room for its title.
         tile.set_size_request(width.max(height as i32), -1);
 
-        picture
+        Thumbnailed { picture, standin }
     });
 
     let label = gtk4::Label::new(Some(title));

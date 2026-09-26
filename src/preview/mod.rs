@@ -103,13 +103,11 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
             Err(Gone) => return,
         };
 
-        // Nothing more to say about a batch that was given up on: the
-        // windows it never reached aren't failures.
-        if !commands.is_empty() {
-            continue;
-        }
-
-        if !failed.is_empty() {
+        // A batch that was given up on doesn't get the second go: whatever
+        // replaced it is waiting, and will ask for these windows again. What
+        // already failed is still worth saying, though — the loop stops before
+        // trying a window rather than after, so nothing here went unattempted.
+        if !failed.is_empty() && commands.is_empty() {
             let retrying = failed.into_iter().map(|(window, _)| window).collect();
 
             failed = match capture(&mut capturer, retrying, width, thumbnails, commands) {
@@ -275,6 +273,48 @@ mod tests {
         assert_eq!(wide.height, 100, "{}x{}", wide.width, wide.height);
         assert_eq!(tall.width, 25);
         assert_eq!(wide.width, 400);
+    }
+
+    /// Says which of the open windows actually come back, which no fixture can
+    /// stand in for: whether a compositor will copy a window it isn't drawing
+    /// is the whole question. Ignored by default, needs a running compositor,
+    /// and only reads.
+    ///
+    /// Run it with `cargo test -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs a running compositor"]
+    fn every_open_window_can_be_captured() {
+        use crate::compositor::Compositor as _;
+
+        let windows = crate::compositor::integrations::hyprland::Compositor
+            .get_windows()
+            .expect("failed to read the windows");
+        let mut capturer = Capturer::connect().expect("failed to connect for captures");
+        capturer
+            .refresh()
+            .expect("failed to list the capturable windows");
+
+        let (mut ok, mut failed) = (0, 0);
+
+        for window in windows.iter().filter(|w| !w.identifier.is_empty()) {
+            let name = format!("{} ({})", window.title, window.app_id);
+
+            match capturer.capture(&window.identifier, 105) {
+                Ok(thumbnail) => {
+                    ok += 1;
+                    println!(
+                        "  ok    {name:<44} {}x{}",
+                        thumbnail.width, thumbnail.height
+                    );
+                }
+                Err(error) => {
+                    failed += 1;
+                    println!("  FAIL  {name:<44} {error:#}");
+                }
+            }
+        }
+
+        println!("{ok} captured, {failed} failed");
     }
 
     #[test]

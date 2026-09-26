@@ -233,8 +233,14 @@ impl Daemon {
     }
 
     /// Asks for a thumbnail of every window on screen, the group being
-    /// switched to first: captures are taken in order and each one arrives on
-    /// its own, so the tiles being looked at fill before the rest.
+    /// still blank first, then the group being switched to: captures are taken
+    /// in order and each one arrives on its own.
+    ///
+    /// Asking for the blank ones first is what stops a window at the end of
+    /// the strip from staying black for good. A batch is abandoned whenever
+    /// the switcher closes, so an order that started with the same windows
+    /// every time would spend each switch re-capturing what it already has and
+    /// never reach the rest.
     ///
     /// Every request names every window that is wanted rather than the ones
     /// that changed, which is what lets a later request replace this one
@@ -249,7 +255,7 @@ impl Daemon {
             return;
         };
 
-        let (mut targeted, mut rest) = (Vec::new(), Vec::new());
+        let mut requests = Vec::new();
         let mut current = false;
 
         for row in session.rows() {
@@ -269,22 +275,21 @@ impl Daemon {
                         },
                     };
 
-                    if current {
-                        targeted.push(request);
-                    } else {
-                        rest.push(request);
-                    }
+                    requests.push((self.overlay.captured(&window.identifier), !current, request));
                 }
             }
         }
 
-        targeted.extend(rest);
+        // Stable, so windows keep the order the compositor gave them within
+        // each of the four cases.
+        requests.sort_by_key(|(captured, untargeted, _)| (*captured, *untargeted));
+        let requests = requests.into_iter().map(|(.., request)| request).collect();
         drop(controller);
 
         // Captured at the size it will be shown at: a picture asks for as much
         // room as its texture is wide, so a larger one would stretch the panel
         // rather than sharpen the thumbnail.
-        self.previews.capture(targeted, config.previews.height);
+        self.previews.capture(requests, config.previews.height);
     }
 
     /// Fills the overlay from the switch in progress, and says what the
