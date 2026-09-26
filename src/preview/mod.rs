@@ -14,9 +14,8 @@ use async_channel::{Receiver, Sender};
 
 use capture::Capturer;
 
-/// How much wider a thumbnail is than it is tall. A window that isn't this
-/// shape is fitted inside, rather than making its row a different height from
-/// every other.
+/// The shape a tile assumes a window has until it has been captured and the
+/// compositor won't say how big it is.
 pub(crate) const RATIO: f32 = 1.6;
 
 /// A window's contents, small enough to sit in a list.
@@ -193,13 +192,11 @@ fn scale(
     target: u32,
     opaque: bool,
 ) -> Thumbnail {
+    // Height is what every thumbnail has in common, so it alone decides how
+    // far the window is scaled down; the width it ends up is the window's own
+    // proportions at that height.
     let target = target.max(1);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let target_height = (target as f32 / RATIO) as u32;
-    let factor = width
-        .div_ceil(target)
-        .max(height.div_ceil(target_height.max(1)))
-        .max(1);
+    let factor = height.div_ceil(target).max(1);
     let step = (factor / 4).max(1);
     let (thumbnail_width, thumbnail_height) = ((width / factor).max(1), (height / factor).max(1));
 
@@ -261,26 +258,23 @@ mod tests {
             0, 0, 0, 255, 255, 255, 255, 255, // row 1
         ];
 
-        let thumbnail = scale("w", &memory, 2, 2, 8, 2, true);
+        let thumbnail = scale("w", &memory, 2, 2, 8, 1, true);
 
         assert_eq!((thumbnail.width, thumbnail.height), (1, 1));
         assert_eq!(thumbnail.pixels, [127, 127, 127, 255]);
     }
 
     #[test]
-    fn a_tall_window_is_fitted_by_its_height_rather_than_its_width() {
-        // 100 wide and 400 tall, asked for 100 across: fitting the width
-        // alone would leave it 400 tall, four times the height of every other
-        // row.
-        let memory = vec![0; 100 * 400 * 4];
-        let thumbnail = scale("w", &memory, 100, 400, 400, 100, true);
+    fn windows_of_different_shapes_come_back_the_same_height() {
+        // A tall window and a wide one, both asked for 100 tall: each keeps
+        // its own proportions, so only the widths differ.
+        let tall = scale("tall", &vec![0; 100 * 400 * 4], 100, 400, 400, 100, true);
+        let wide = scale("wide", &vec![0; 800 * 200 * 4], 800, 200, 3200, 100, true);
 
-        assert!(
-            thumbnail.height <= (100.0 / RATIO) as u32,
-            "{}x{}",
-            thumbnail.width,
-            thumbnail.height
-        );
+        assert_eq!(tall.height, 100, "{}x{}", tall.width, tall.height);
+        assert_eq!(wide.height, 100, "{}x{}", wide.width, wide.height);
+        assert_eq!(tall.width, 25);
+        assert_eq!(wide.width, 400);
     }
 
     #[test]

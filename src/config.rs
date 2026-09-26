@@ -320,17 +320,17 @@ pub(crate) struct Previews {
     /// Whether to capture them at all.
     #[serde(default = "enabled")]
     pub(crate) enabled: bool,
-    /// How wide a thumbnail is, in pixels. Its height follows the window's
-    /// own proportions.
-    #[serde(default = "default_preview_width")]
-    pub(crate) width: u32,
+    /// How tall a thumbnail is, in pixels. Every thumbnail is this tall and
+    /// as wide as the window's own proportions make it.
+    #[serde(default = "default_preview_height")]
+    pub(crate) height: u32,
 }
 
 impl Default for Previews {
     fn default() -> Self {
         Self {
             enabled: enabled(),
-            width: default_preview_width(),
+            height: default_preview_height(),
         }
     }
 }
@@ -358,8 +358,8 @@ fn enabled() -> bool {
     true
 }
 
-fn default_preview_width() -> u32 {
-    168
+fn default_preview_height() -> u32 {
+    105
 }
 
 #[cfg(test)]
@@ -513,7 +513,7 @@ mod tests {
         );
 
         assert!(!config.previews.enabled);
-        assert_eq!(config.previews.width, default_preview_width());
+        assert_eq!(config.previews.height, default_preview_height());
         assert!(config.switcher.icons);
     }
 }

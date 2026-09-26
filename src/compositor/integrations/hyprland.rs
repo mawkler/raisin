@@ -73,6 +73,9 @@ struct Client {
     /// `ext_foreign_toplevel_handle_v1`, which is how a capture finds it.
     #[serde(default)]
     stable_id: String,
+    /// Width and height on screen.
+    #[serde(default)]
+    size: [i32; 2],
 }
 
 impl From<Client> for Window {
@@ -82,6 +85,11 @@ impl From<Client> for Window {
             app_id: client.class,
             title: client.title,
             identifier: client.stable_id,
+            #[allow(clippy::cast_sign_loss)]
+            size: match client.size {
+                [width, height] if width > 0 && height > 0 => Some((width as u32, height as u32)),
+                _ => None,
+            },
         }
     }
 }

@@ -136,6 +136,10 @@ Super came up while captures were in flight.
 
 ## Settled since
 
+- **Shape.** Every thumbnail is the same height and as wide as its own window, so a row of them
+  reads as the windows themselves. A tile is sized from the window's geometry before its capture
+  arrives, which keeps the strip from reflowing as thumbnails land; a compositor that won't report
+  geometry falls back to a landscape shape until the capture corrects it.
 - **Layout.** Every window gets a thumbnail, not only the group being switched between: the strip
   runs sideways, so a thumbnail on every tile costs width rather than height.
 - **Previews survive a session**, cached by identifier, so a switcher opened a second time shows

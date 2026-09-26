@@ -73,7 +73,7 @@ icons = true        # show each application's icon beside its name
 
 [previews]
 enabled = true    # show what each window looks like
-width = 168       # pixels wide; the height follows the window's own proportions
+height = 105      # pixels tall; every thumbnail is, and the width follows the window
 ```
 
 You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Super and Tab.

@@ -259,9 +259,9 @@ impl Overlay {
                         &window.title
                     };
                     let preview = (previews.enabled && !window.identifier.is_empty())
-                        .then_some(previews.width);
+                        .then_some(previews.height);
 
-                    let (tile, thumbnail) = tile(title, preview, previews.width);
+                    let (tile, thumbnail) = tile(title, preview, shape(window.size));
 
                     if let Some(thumbnail) = thumbnail {
                         if let Some(texture) = self.textures.borrow().get(&window.identifier) {
@@ -298,7 +298,7 @@ impl Overlay {
     pub(crate) fn set_thumbnail(&self, thumbnail: Thumbnail) {
         // A capture asked for before the configured width shrank would take
         // more room than its frame allows, widening the tile it sits in.
-        if thumbnail.width > self.previews.get().width {
+        if thumbnail.height > self.previews.get().height {
             return;
         }
 
@@ -438,23 +438,31 @@ fn app_icon(app_id: &str) -> Option<gtk4::Image> {
 ///
 /// The room for a thumbnail is made now rather than when the capture arrives,
 /// so tiles don't jump about as they turn up.
-fn tile(title: &str, preview: Option<u32>, width: u32) -> (gtk4::Box, Option<gtk4::Picture>) {
+fn tile(title: &str, preview: Option<u32>, shape: f32) -> (gtk4::Box, Option<gtk4::Picture>) {
     let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     tile.add_css_class("tile");
     tile.set_focusable(true);
-    tile.set_size_request(width as i32, -1);
 
-    let picture = preview.map(|width| {
+    let picture = preview.map(|height| {
         let picture = gtk4::Picture::new();
         picture.set_content_fit(gtk4::ContentFit::Contain);
         picture.set_halign(gtk4::Align::Center);
         picture.set_valign(gtk4::Align::Center);
 
+        // Every thumbnail is the same height and as wide as its own window,
+        // so a row of them reads as the windows themselves rather than as a
+        // row of identical boxes.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let width = (height as f32 * shape) as i32;
+
         let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         frame.add_css_class("thumbnail");
-        frame.set_size_request(width as i32, (width as f32 / RATIO) as i32);
+        frame.set_size_request(width, height as i32);
         frame.append(&picture);
         tile.append(&frame);
+
+        // A tall, narrow window would otherwise leave no room for its title.
+        tile.set_size_request(width.max(height as i32), -1);
 
         picture
     });
@@ -469,6 +477,16 @@ fn tile(title: &str, preview: Option<u32>, width: u32) -> (gtk4::Box, Option<gtk
     tile.append(&label);
 
     (tile, picture)
+}
+
+/// How wide a window is against its height, which is the shape its thumbnail
+/// comes back. A window the compositor won't measure falls back to the shape a
+/// landscape window usually has, and is corrected once it has been captured.
+fn shape(size: Option<(u32, u32)>) -> f32 {
+    match size {
+        Some((width, height)) if height > 0 => width as f32 / height as f32,
+        _ => RATIO,
+    }
 }
 
 fn footer(keys: &config::Keys) -> gtk4::Box {

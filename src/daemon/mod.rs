@@ -275,7 +275,7 @@ impl Daemon {
         // Captured at the size it will be shown at: a picture asks for as much
         // room as its texture is wide, so a larger one would stretch the panel
         // rather than sharpen the thumbnail.
-        self.previews.capture(targeted, config.previews.width);
+        self.previews.capture(targeted, config.previews.height);
     }
 
     /// Fills the overlay from the switch in progress, and says what the
@@ -304,7 +304,7 @@ impl Daemon {
         };
 
         let focused = match self.compositor.get_focused_window() {
-            Ok(focused) => focused,
+            Ok(focused) => focused.map(Box::new),
             Err(error) => {
                 eprintln!("raisin: {error:#}");
                 None

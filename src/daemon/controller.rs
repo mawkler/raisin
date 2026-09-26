@@ -18,7 +18,9 @@ pub(crate) enum Event {
         target: Target,
         direction: Direction,
         windows: Vec<Window>,
-        focused: Option<Window>,
+        /// Boxed because it is the one big thing an event carries, and every
+        /// other event would otherwise be as large as this one.
+        focused: Option<Box<Window>>,
     },
     /// A key that steers a switch already in progress was pressed.
     Cycle { direction: Direction },
@@ -80,7 +82,7 @@ impl Controller {
                 direction,
                 windows,
                 focused,
-            } => self.trigger(&target, direction, windows, focused.as_ref()),
+            } => self.trigger(&target, direction, windows, focused.as_deref()),
             Event::Cycle { direction } => self.cycle(direction),
             Event::Confirm => self.confirm(),
             Event::Cancel => self.end(),
@@ -222,6 +224,7 @@ mod tests {
             app_id: app_id.to_owned(),
             title: format!("{app_id} {id}"),
             identifier: id.to_owned(),
+            size: None,
         }
     }
 

@@ -93,8 +93,9 @@ impl Capturer {
         Ok(())
     }
 
-    /// Captures one window and scales it down to `width` pixels across.
-    pub(crate) fn capture(&mut self, identifier: &str, width: u32) -> Result<Thumbnail> {
+    /// Captures one window and scales it down to `height` pixels tall,
+    /// keeping the window's own proportions.
+    pub(crate) fn capture(&mut self, identifier: &str, height: u32) -> Result<Thumbnail> {
         let handle = self
             .state
             .windows
@@ -121,7 +122,7 @@ impl Capturer {
                 (),
             );
 
-        let captured = self.capture_into(&session, identifier, width);
+        let captured = self.capture_into(&session, identifier, height);
 
         session.destroy();
         source.destroy();
@@ -133,7 +134,7 @@ impl Capturer {
         &mut self,
         session: &ExtImageCopyCaptureSessionV1,
         identifier: &str,
-        width: u32,
+        height: u32,
     ) -> Result<Thumbnail> {
         self.state.frame = Frame::default();
 
@@ -178,7 +179,7 @@ impl Capturer {
                     source_width,
                     source_height,
                     stride,
-                    width,
+                    height,
                     matches!(format, wl_shm::Format::Xrgb8888),
                 )),
             });

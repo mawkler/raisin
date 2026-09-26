@@ -195,6 +195,7 @@ mod tests {
             app_id: app_id.to_owned(),
             title: title.to_owned(),
             identifier: id.to_owned(),
+            size: None,
         }
     }
 

@@ -15,6 +15,10 @@ pub(crate) struct Window {
     /// which is not what the compositor's own IPC calls it. Empty when the
     /// compositor doesn't offer one, which means no preview for this window.
     pub identifier: String,
+    /// How big the window is on screen, which is the shape its thumbnail will
+    /// come back. `None` when the compositor doesn't say, and the tile falls
+    /// back to a common shape until the capture arrives.
+    pub size: Option<(u32, u32)>,
 }
 
 impl PartialEq for Window {
