@@ -20,7 +20,8 @@ use gtk4::glib;
 
 use crate::compositor::Compositor as _;
 use crate::compositor::integrations::hyprland::{
-    self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, NEXT_EVENT, PREVIOUS_EVENT, SWITCH_EVENT,
+    self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, LAUNCH_EVENT, NEXT_EVENT, PREVIOUS_EVENT,
+    SWITCH_EVENT,
 };
 use crate::config::{Config, Target};
 use crate::preview::{Previews, Request, Thumbnail};
@@ -382,6 +383,24 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
         "custom" if data == PREVIOUS_EVENT => daemon.handle(Event::Cycle {
             direction: Direction::Backward,
         }),
+        "custom" if data.starts_with(LAUNCH_EVENT) => {
+            let Some(key) = data.strip_prefix(LAUNCH_EVENT) else {
+                return;
+            };
+            let config = daemon.config();
+            let Some(target) = config.target(key) else {
+                return;
+            };
+
+            // Asking for a new window settles what the switch was for, so the
+            // switcher goes without focusing anything. Harmless when it isn't
+            // open: there is then nothing to end.
+            daemon.handle(Event::Cancel);
+
+            if let Err(error) = daemon.compositor.launch_application(&target.app) {
+                eprintln!("raisin: {error:#}");
+            }
+        }
         "custom" => {
             let pressed = [
                 (SWITCH_EVENT, Direction::Forward),

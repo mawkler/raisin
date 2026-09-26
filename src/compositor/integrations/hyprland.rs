@@ -43,6 +43,10 @@ pub(crate) const SWITCH_EVENT: &str = "raisin:switch:";
 /// The same, for Shift and a mapped key, which goes the other way.
 pub(crate) const BACK_EVENT: &str = "raisin:back:";
 
+/// The same, for Ctrl and a mapped key, which starts another copy of the
+/// application rather than switching to one that is already running.
+pub(crate) const LAUNCH_EVENT: &str = "raisin:launch:";
+
 /// The events the keys that steer a switch in progress emit.
 pub(crate) const NEXT_EVENT: &str = "raisin:next";
 pub(crate) const PREVIOUS_EVENT: &str = "raisin:previous";
@@ -627,8 +631,9 @@ pub(crate) struct Binds {
 }
 
 impl Binds {
-    /// Installs a binding for every mapped letter — one for each direction —
-    /// plus the ones that confirm a switch when Super is released.
+    /// Installs a binding for every mapped letter — one for each direction,
+    /// and one that starts another copy of the application — plus the ones
+    /// that confirm a switch when Super is released.
     pub(crate) fn install(config: &Config) -> Result<Self> {
         let switches = config.keys.apps.iter().flat_map(|(key, target)| {
             let id = key.id();
@@ -660,7 +665,23 @@ impl Binds {
                 occupied: false,
             });
 
-            std::iter::once(forward).chain(backward)
+            // Ctrl and the same key runs the application's command again,
+            // for when the window you want doesn't exist yet.
+            let mut launch_mods = vec!["SUPER".to_owned(), "CTRL".to_owned()];
+            launch_mods.extend(key.mods.iter().cloned());
+
+            let launch = Bind {
+                name: format!("launch:{id}"),
+                mods: launch_mods,
+                key: key.key.clone(),
+                event: format!("{LAUNCH_EVENT}{id}"),
+                role: format!("the key for a new {}", target.app),
+                flags: Flags::default(),
+                ownership: Ownership::Exclusive,
+                occupied: false,
+            };
+
+            std::iter::once(forward).chain(backward).chain([launch])
         });
 
         let confirms = SUPER_KEYS.iter().map(|key| Bind {
@@ -697,9 +718,12 @@ impl Binds {
         // some other key's backwards bind. Both would be installed, and
         // whichever went second would unbind the first while raisin still
         // held it. The configured key wins; the derived one is dropped.
-        let (forwards, backwards): (Vec<_>, Vec<_>) = switches
-            .chain(confirms)
-            .partition(|bind| !bind.name.starts_with("back:"));
+        // A key the user configured beats one raisin derived from another
+        // key, whichever way round they were listed.
+        let derived =
+            |bind: &Bind| bind.name.starts_with("back:") || bind.name.starts_with("launch:");
+        let (forwards, backwards): (Vec<_>, Vec<_>) =
+            switches.chain(confirms).partition(|bind| !derived(bind));
         let taken: HashMap<_, _> = forwards
             .iter()
             .map(|bind| (bind.slot(), bind.role.clone()))

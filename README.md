@@ -90,6 +90,11 @@ use the application.
 
 You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Super and Tab.
 
+Holding `Ctrl` with an application's key runs its `cmd` again, for when the window you want
+doesn't exist yet: `Super + Ctrl + t` starts another terminal rather than switching to one. If the
+switcher is open it closes, without focusing anything: asking for a new window has answered the
+question it was asking.
+
 Holding `Shift` with an application's key walks its windows the other way, the way Alt-Shift-Tab
 does. That needs no configuration — and it's why a key that names `Shift` itself doesn't get one:
 `"SHIFT + a"` is free only while plain `a` is unmapped, and raisin says so if you map both.
