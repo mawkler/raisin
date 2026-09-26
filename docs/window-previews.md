@@ -101,6 +101,7 @@ src/daemon/overlay.rs        a GdkTexture per row, placeholder until one arrives
 | A client hasn't drawn since it was last visible | Whatever it last drew, which is what every other switcher shows too. |
 | Capture takes longer than the switch | The row keeps its placeholder, the switch is unaffected. |
 | XWayland windows | Expected to work through the same path; worth an explicit test, since XWayland surfaces have bitten screencopy implementations before. |
+| A window positioned entirely off the monitor | Its application's icon instead. Hyprland copies a window only while its box overlaps the monitor being rendered (`CScreenshareManager`), and skips the request silently rather than refusing it, so the client can only time out. Windows on hidden workspaces usually still overlap by a sliver and do capture. |
 | A huge window, or many at once | Captures run one at a time, the group being switched to first, and a newer request abandons whatever is still running. |
 
 ## What was built
