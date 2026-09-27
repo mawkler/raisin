@@ -1,13 +1,15 @@
 //! The switcher window: a small dark panel, centred, above everything else.
 
-use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use gtk4::prelude::*;
 use gtk4::{gdk, glib, pango};
 use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
 
+use crate::compositor::Window;
 use crate::config;
 use crate::preview::{RATIO, Thumbnail};
 use crate::switcher::{Row, Session};
@@ -19,6 +21,10 @@ const ICON_SIZE: i32 = 16;
 /// it. Every row's name is given the same width, so this is what that width
 /// works out to for the longest of them.
 const NAME_WIDTH: i32 = 14;
+
+/// How tall the marker standing in for a window of an application that isn't
+/// the one being switched to is. Its width comes from the window.
+const PILL: i32 = 24;
 
 const STYLE: &str = "
 window.raisin,
@@ -52,6 +58,19 @@ window.raisin > widget {
 /* One application per row: its name, then its windows. */
 .row {
     padding: 2px 0;
+}
+
+/* One window of an application that isn't the one being switched to: the
+   thumbnail's own frame, at a fraction of its height. */
+.pill {
+    border-radius: 4px;
+}
+
+/* An application with nothing open: there to show its key, and no more. */
+.absent .group,
+.absent .keycap,
+.absent .app-icon {
+    opacity: 0.4;
 }
 
 .tile {
@@ -108,6 +127,17 @@ scrollbar {
 }
 ";
 
+/// An application that is configured but has no windows open. It still gets a
+/// row, so its key is somewhere to be seen rather than only in the
+/// configuration file.
+pub(crate) struct Absent {
+    /// What the `[names]` table would call it, keyed the way groups are.
+    pub(crate) app_id: String,
+    /// What to call it when the table doesn't.
+    pub(crate) app: String,
+    pub(crate) trigger: String,
+}
+
 /// A tile's thumbnail: the picture a capture goes into, and the icon shown in
 /// its place until one arrives — or for good, when none ever does.
 struct Thumbnailed {
@@ -151,6 +181,12 @@ pub(crate) struct Overlay {
     /// What to call each application, by `app_id`, for the ones the user would
     /// rather name themselves.
     names: RefCell<BTreeMap<String, String>>,
+    /// Every desktop entry on the system, as `(name of the entry, the command
+    /// it runs, what it calls the application)`.
+    ///
+    /// Read once and kept: asking for them walks every entry on the system,
+    /// which is far too much to do while a switch is waiting to appear.
+    entries: OnceCell<Vec<(String, String, String)>>,
 }
 
 impl Overlay {
@@ -226,6 +262,7 @@ impl Overlay {
             previews: Cell::new(*previews),
             icons: Cell::new(switcher.icons),
             names: RefCell::new(names.clone()),
+            entries: OnceCell::new(),
         })
     }
 
@@ -263,7 +300,12 @@ impl Overlay {
     ///
     /// Every window gets a thumbnail, and one already captured is put back
     /// straight away, so rebuilding the strip doesn't empty it.
-    pub(crate) fn fill(&self, session: &Session, triggers: &HashMap<String, String>) {
+    pub(crate) fn fill(
+        &self,
+        session: &Session,
+        triggers: &HashMap<String, String>,
+        absent: &[Absent],
+    ) {
         self.set_heading(session);
 
         while let Some(block) = self.strip.first_child() {
@@ -274,80 +316,128 @@ impl Overlay {
         self.thumbnails.borrow_mut().clear();
 
         let previews = self.previews.get();
-        let mut windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
-        // Every row's name takes the same width, so the windows all start at
+        // Every row's name takes the same width, so the windows all start in
         // the same place however long the applications are called.
         let names = gtk4::SizeGroup::new(gtk4::SizeGroupMode::Horizontal);
+
+        // Gathered before anything is built, because rows are ordered by the
+        // name on screen rather than by the `app_id` they are keyed under:
+        // `Ghostty` and `com.mitchellh.ghostty` sort nothing alike.
+        let mut groups: Vec<(&str, String, Vec<&Window>)> = Vec::new();
 
         for row in session.rows() {
             match row {
                 Row::Group { app_id, name } => {
-                    let name = self.name(app_id, name);
-                    windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-
-                    // A row of windows scrolls sideways on its own when there
-                    // are more of them than the panel is wide.
-                    let sideways = gtk4::ScrolledWindow::new();
-                    sideways.set_child(Some(&windows));
-                    sideways.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
-                    sideways.set_propagate_natural_height(true);
-                    sideways.set_hexpand(true);
-
-                    // The icon is still looked up by `app_id`: it is what the
-                    // desktop entry is named after, not what the window calls
-                    // itself.
-                    let header = group_header(
-                        &name,
-                        app_id,
-                        triggers.get(app_id).map(String::as_str),
-                        self.icons.get(),
-                    );
-                    names.add_widget(&header);
-
-                    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
-                    row.add_css_class("row");
-                    row.append(&header);
-                    row.append(&sideways);
-
-                    self.strip.append(&row);
+                    groups.push((app_id, self.name(app_id, name), Vec::new()));
                 }
-                // A window without a title is better named by its application
-                // than by an empty tile.
                 Row::Window { window, .. } => {
-                    let title = if window.title.is_empty() {
-                        &window.app_id
-                    } else {
-                        &window.title
-                    };
-                    let preview = (previews.enabled && !window.identifier.is_empty())
-                        .then_some(previews.height);
-
-                    let (tile, thumbnail) =
-                        tile(title, preview, shape(window.size), &window.app_id);
-
-                    if let Some(thumbnail) = thumbnail {
-                        if let Some(texture) = self.textures.borrow().get(&window.identifier) {
-                            thumbnail.show(texture);
-                        }
-
-                        self.thumbnails
-                            .borrow_mut()
-                            .insert(window.identifier.clone(), thumbnail);
+                    if let Some((.., windows)) = groups.last_mut() {
+                        windows.push(window);
                     }
-
-                    windows.append(&tile);
-                    self.tiles.borrow_mut().insert(window.id.clone(), tile);
                 }
             }
         }
 
+        groups.sort_by_key(|(_, name, _)| name.to_lowercase());
+
+        for (app_id, name, group) in &groups {
+            // Only the application being switched to shows its windows in
+            // full. Every other window is one marker, the shape of the window
+            // it stands for, so the row is a line tall.
+            let targeted = *app_id == session.group();
+            let windows =
+                gtk4::Box::new(gtk4::Orientation::Horizontal, if targeted { 8 } else { 5 });
+
+            for window in group {
+                if targeted {
+                    self.append_tile(&windows, window, previews);
+                } else {
+                    windows.append(&pill(shape(window.size), previews.height));
+                }
+            }
+
+            // A row of windows scrolls sideways on its own when there are more
+            // of them than the panel is wide.
+            let sideways = gtk4::ScrolledWindow::new();
+            sideways.set_child(Some(&windows));
+            sideways.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+            sideways.set_propagate_natural_height(true);
+            sideways.set_hexpand(true);
+
+            // The icon is still looked up by `app_id`: it is what the desktop
+            // entry is named after, not what the window calls itself.
+            let header = group_header(
+                name,
+                app_id,
+                triggers.get(*app_id).map(String::as_str),
+                self.icons.get(),
+                Some(NAME_WIDTH),
+            );
+            names.add_widget(&header);
+
+            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+            row.add_css_class("row");
+            row.append(&header);
+            row.append(&sideways);
+
+            self.strip.append(&row);
+        }
+
+        // Applications with nothing open share one line between them: they are
+        // there so their keys can be seen, which takes a name and no more.
+        // Whatever doesn't fit is cut off rather than wrapping.
+        if !absent.is_empty() {
+            let mut waiting: Vec<_> = absent
+                .iter()
+                .map(|application| (self.absent_name(application), application))
+                .collect();
+            waiting.sort_by_key(|(name, _)| name.to_lowercase());
+
+            let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+
+            for (name, application) in &waiting {
+                chips.append(&group_header(
+                    name,
+                    &application.app_id,
+                    Some(&application.trigger),
+                    self.icons.get(),
+                    None,
+                ));
+            }
+
+            let cut_off = gtk4::ScrolledWindow::new();
+            cut_off.set_child(Some(&chips));
+            cut_off.set_policy(gtk4::PolicyType::External, gtk4::PolicyType::Never);
+            cut_off.set_propagate_natural_height(true);
+            // Without this the scroller asks for no width at all and clips
+            // every name away.
+            cut_off.set_hexpand(true);
+
+            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+            row.add_css_class("row");
+            row.add_css_class("absent");
+            row.append(&cut_off);
+
+            self.strip.append(&row);
+        }
+
         // Windows that have since closed would otherwise be remembered for as
         // long as the daemon runs.
-        let open = self.thumbnails.borrow();
+        //
+        // Every open window counts, not only the ones showing a thumbnail: an
+        // application that isn't the one being switched to is a row of markers
+        // now, and forgetting its captures here would mean taking them again
+        // the moment the switch pointed back at it.
+        let open: HashSet<&str> = groups
+            .iter()
+            .flat_map(|(.., windows)| windows.iter())
+            .map(|window| window.identifier.as_str())
+            .collect();
+
         self.textures
             .borrow_mut()
-            .retain(|identifier, _| open.contains_key(identifier));
+            .retain(|identifier, _| open.contains(identifier.as_str()));
     }
 
     /// Names the application the switch now points at.
@@ -357,10 +447,65 @@ impl Overlay {
         self.heading.set_text(&format!("Switch to {name}"));
     }
 
+    /// Puts a window's tile into `row`, showing whatever has been captured of
+    /// it already.
+    fn append_tile(&self, row: &gtk4::Box, window: &Window, previews: config::Previews) {
+        // A window without a title is better named by its application than by
+        // an empty tile.
+        let title = if window.title.is_empty() {
+            &window.app_id
+        } else {
+            &window.title
+        };
+        let preview =
+            (previews.enabled && !window.identifier.is_empty()).then_some(previews.height);
+
+        let (tile, thumbnail) = tile(title, preview, shape(window.size), &window.app_id);
+
+        if let Some(thumbnail) = thumbnail {
+            if let Some(texture) = self.textures.borrow().get(&window.identifier) {
+                thumbnail.show(texture);
+            }
+
+            self.thumbnails
+                .borrow_mut()
+                .insert(window.identifier.clone(), thumbnail);
+        }
+
+        row.append(&tile);
+        self.tiles.borrow_mut().insert(window.id.clone(), tile);
+    }
+
     /// Whether this window has been captured at some point, and so has
     /// something to show while a fresh capture is taken.
     pub(crate) fn captured(&self, identifier: &str) -> bool {
         self.textures.borrow().contains_key(identifier)
+    }
+
+    /// What to call an application with nothing open.
+    ///
+    /// There are no windows to take a name from, and the command that would
+    /// start it is a poor label — `teams-for-linux` rather than `Teams for
+    /// Linux` — so its desktop entry is asked before falling back to that.
+    fn absent_name(&self, application: &Absent) -> String {
+        if let Some(name) = self.names.borrow().get(&application.app_id) {
+            return name.clone();
+        }
+
+        let entries = self.entries.get_or_init(desktop_entries);
+        let wanted = [
+            application.app_id.to_lowercase(),
+            application.app.to_lowercase(),
+        ];
+
+        // An exact match on the entry's own name comes first: a system can
+        // carry several entries running the same command, and the extras tend
+        // to be named after the command rather than after the application.
+        entries
+            .iter()
+            .find(|(entry, ..)| wanted.contains(entry))
+            .or_else(|| entries.iter().find(|(_, runs, _)| wanted.contains(runs)))
+            .map_or_else(|| application.app.clone(), |(.., name)| name.clone())
     }
 
     /// What to call an application: what the user called it, if they said.
@@ -466,13 +611,55 @@ fn line(label: &gtk4::Label) {
     label.set_ellipsize(pango::EllipsizeMode::End);
 }
 
+/// The marker standing in for a window of an application that isn't the one
+/// being switched to.
+///
+/// It is exactly as wide as that window's thumbnail would have been, so a row
+/// of markers has the same rhythm as the row of thumbnails it stands in for —
+/// only a line tall instead of a thumbnail tall.
+fn pill(shape: f32, thumbnail: u32) -> gtk4::Box {
+    let pill = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    // The same frame a thumbnail sits in, so a marker reads as the window it
+    // stands for rather than as a blob.
+    pill.add_css_class("thumbnail");
+    pill.add_css_class("pill");
+    pill.set_valign(gtk4::Align::Center);
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let width = (thumbnail as f32 * shape) as i32;
+    // Even the narrowest window has to be visible as something.
+    pill.set_size_request(width.max(4), PILL);
+
+    pill
+}
+
 /// An application's name, its icon, and the key that switches to it.
-fn group_header(name: &str, app_id: &str, trigger: Option<&str>, icons: bool) -> gtk4::Box {
+///
+/// `width` is how many characters of the name to make room for; without one
+/// the name takes only the room it needs, which is what a line of applications
+/// side by side wants.
+fn group_header(
+    name: &str,
+    app_id: &str,
+    trigger: Option<&str>,
+    icons: bool,
+    width: Option<i32>,
+) -> gtk4::Box {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
     header.set_valign(gtk4::Align::Center);
 
-    if let Some(icon) = icons.then(|| app_icon(app_id)).flatten() {
-        header.append(&icon);
+    if icons {
+        match app_icon(app_id) {
+            Some(icon) => header.append(&icon),
+            // An application the icon theme has nothing for still takes the
+            // room an icon would have, or its key and name would sit a little
+            // to the left of everyone else's.
+            None => {
+                let gap = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+                gap.set_size_request(ICON_SIZE, ICON_SIZE);
+                header.append(&gap);
+            }
+        }
     }
 
     if let Some(trigger) = trigger {
@@ -484,15 +671,98 @@ fn group_header(name: &str, app_id: &str, trigger: Option<&str>, icons: bool) ->
     let label = gtk4::Label::new(Some(&name.to_uppercase()));
     label.add_css_class("group");
     label.set_xalign(0.0);
-    // The name is the last thing in the row's label, so it is what gives way
-    // when an application is called something long. It asks for room for a
-    // sensible name and ellipsises past that, rather than hexpanding — the
-    // windows beside it want that width.
-    label.set_ellipsize(pango::EllipsizeMode::End);
-    label.set_max_width_chars(NAME_WIDTH);
+    // Asks for a fixed span of characters and ellipsises past it. Both halves
+    // matter: an ellipsised label that only sets a maximum asks for nothing
+    // and gets it, which collapses every name in the column to one letter.
+    // Only a name in a fixed column ellipsises. One that takes the room it
+    // needs must not: an ellipsised label asks for almost nothing, and a line
+    // of them would be squeezed to initials rather than cut off at the end.
+    if let Some(width) = width {
+        label.set_ellipsize(pango::EllipsizeMode::End);
+        label.set_width_chars(width);
+        label.set_max_width_chars(width);
+    }
     header.append(&label);
 
     header
+}
+
+/// Every desktop entry on the system: what the entry itself is called, the
+/// command it runs, and the name it gives the application.
+///
+/// Read straight off the disk rather than asked of GIO, whose answer comes
+/// through D-Bus and can block — which is the last thing wanted on the path
+/// that has to put the switcher on screen.
+fn desktop_entries() -> Vec<(String, String, String)> {
+    let home = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
+    let shared =
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_owned());
+
+    let roots = home
+        .into_iter()
+        .chain(shared.split(':').map(PathBuf::from))
+        .map(|root| root.join("applications"));
+
+    let mut entries = Vec::new();
+
+    for root in roots {
+        let Ok(files) = std::fs::read_dir(root) else {
+            continue;
+        };
+
+        for file in files.flatten() {
+            let path = file.path();
+
+            if path.extension().and_then(|end| end.to_str()) != Some("desktop") {
+                continue;
+            }
+
+            let (Some(entry), Ok(text)) = (
+                path.file_stem().and_then(|stem| stem.to_str()),
+                std::fs::read_to_string(&path),
+            ) else {
+                continue;
+            };
+
+            if let Some((name, runs)) = describes(&text) {
+                entries.push((entry.to_lowercase(), runs, name));
+            }
+        }
+    }
+
+    entries
+}
+
+/// The name a desktop entry gives its application, and the command it runs.
+fn describes(text: &str) -> Option<(String, String)> {
+    let (mut name, mut runs) = (None, None);
+
+    for line in text.lines() {
+        // Entries carry a section per language and per action; only the first
+        // one describes the application itself.
+        if line.starts_with('[') && (name.is_some() || runs.is_some()) {
+            break;
+        }
+
+        if let Some(value) = line.strip_prefix("Name=") {
+            name.get_or_insert_with(|| value.trim().to_owned());
+        } else if let Some(value) = line.strip_prefix("Exec=") {
+            runs.get_or_insert_with(|| {
+                value
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_lowercase()
+            });
+        }
+    }
+
+    Some((name?, runs.unwrap_or_default()))
 }
 
 /// The application's own icon, if the icon theme has one under a name the

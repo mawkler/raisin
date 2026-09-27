@@ -27,7 +27,7 @@ use crate::config::{Config, Target};
 use crate::preview::{Previews, Request, Thumbnail};
 use crate::switcher::{Direction, Row, Session};
 use controller::{Controller, Effect, Event};
-use overlay::Overlay;
+use overlay::{Absent, Overlay};
 
 pub(crate) use ipc::switch;
 
@@ -191,21 +191,6 @@ impl Daemon {
                 // so a tap quick enough to skip it captures nothing at all.
                 self.capture(&config);
             }
-            // The strip already holds every window, so pointing the switch at
-            // another application leaves it alone. Only the heading changes —
-            // and which windows are worth capturing first.
-            Effect::Retitle => {
-                let config = self.config();
-                let controller = self.controller.borrow();
-                let Some(session) = controller.session() else {
-                    return;
-                };
-
-                self.overlay.set_heading(session);
-                drop(controller);
-
-                self.capture(&config);
-            }
             Effect::Highlight => {
                 if let Some(session) = self.controller.borrow().session() {
                     self.overlay.highlight(session);
@@ -262,8 +247,10 @@ impl Daemon {
         for row in session.rows() {
             match row {
                 Row::Group { app_id, .. } => current = app_id == session.group(),
+                // Only the application being switched to shows its windows in
+                // full; every other row is markers, which need no capture.
                 Row::Window { window, .. } => {
-                    if window.identifier.is_empty() {
+                    if !current || window.identifier.is_empty() {
                         continue;
                     }
 
@@ -276,15 +263,14 @@ impl Daemon {
                         },
                     };
 
-                    requests.push((self.overlay.captured(&window.identifier), !current, request));
+                    requests.push((self.overlay.captured(&window.identifier), request));
                 }
             }
         }
 
-        // Stable, so windows keep the order the compositor gave them within
-        // each of the four cases.
-        requests.sort_by_key(|(captured, untargeted, _)| (*captured, *untargeted));
-        let requests = requests.into_iter().map(|(.., request)| request).collect();
+        // Stable, so windows keep the order the compositor gave them.
+        requests.sort_by_key(|(captured, _)| *captured);
+        let requests = requests.into_iter().map(|(_, request)| request).collect();
         drop(controller);
 
         // Captured at the size it will be shown at: a picture asks for as much
@@ -300,7 +286,11 @@ impl Daemon {
         let controller = self.controller.borrow();
         let session = controller.session()?;
 
-        self.overlay.fill(session, &triggers(&config, session));
+        self.overlay.fill(
+            session,
+            &triggers(&config, session),
+            &absent(&config, session),
+        );
 
         drop(controller);
 
@@ -534,6 +524,22 @@ fn triggers(config: &Config, session: &Session) -> HashMap<String, String> {
             let group = session.find_group(target.search())?;
 
             Some((group.to_owned(), key.to_string()))
+        })
+        .collect()
+}
+
+/// The applications that are configured but have nothing open, so the
+/// switcher can show their keys too.
+fn absent(config: &Config, session: &Session) -> Vec<Absent> {
+    config
+        .keys
+        .apps
+        .iter()
+        .filter(|(_, target)| session.find_group(target.search()).is_none())
+        .map(|(key, target)| Absent {
+            app_id: target.search().to_lowercase(),
+            app: target.app.clone(),
+            trigger: key.to_string(),
         })
         .collect()
 }
