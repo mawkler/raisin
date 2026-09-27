@@ -15,6 +15,11 @@ use crate::switcher::{Row, Session};
 /// How big an application's icon is beside its name.
 const ICON_SIZE: i32 = 16;
 
+/// How many characters of an application's name a row shows before ellipsising
+/// it. Every row's name is given the same width, so this is what that width
+/// works out to for the longest of them.
+const NAME_WIDTH: i32 = 14;
+
 const STYLE: &str = "
 window.raisin,
 window.raisin > widget {
@@ -42,6 +47,11 @@ window.raisin > widget {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
+}
+
+/* One application per row: its name, then its windows. */
+.row {
+    padding: 2px 0;
 }
 
 .tile {
@@ -171,18 +181,18 @@ impl Overlay {
         heading.add_css_class("heading");
         line(&heading);
 
-        let strip = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);
+        let strip = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
 
-        // The applications run off to the side rather than down the screen, so
-        // the panel stays the height of one row of windows however many there
-        // are.
+        // One row per application, stacked downwards. The panel is as wide as
+        // it is configured to be rather than as wide as its contents: a row
+        // with more windows than fit scrolls within itself, so the names stay
+        // where they are instead of sliding off the side.
         let scroll = gtk4::ScrolledWindow::new();
         scroll.set_child(Some(&strip));
-        scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
-        scroll.set_propagate_natural_width(true);
+        scroll.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
         scroll.set_propagate_natural_height(true);
         let (screen_width, screen_height) = screen();
-        scroll.set_max_content_width(switcher.width.pixels(screen_width));
+        scroll.set_size_request(switcher.width.pixels(screen_width), -1);
         scroll.set_max_content_height(switcher.max_height.pixels(screen_height));
 
         let footer = footer(keys);
@@ -229,7 +239,7 @@ impl Overlay {
     ) {
         let (screen_width, screen_height) = screen();
         self.scroll
-            .set_max_content_width(switcher.width.pixels(screen_width));
+            .set_size_request(switcher.width.pixels(screen_width), -1);
         self.scroll
             .set_max_content_height(switcher.max_height.pixels(screen_height));
         self.previews.set(*previews);
@@ -266,25 +276,41 @@ impl Overlay {
         let previews = self.previews.get();
         let mut windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
+        // Every row's name takes the same width, so the windows all start at
+        // the same place however long the applications are called.
+        let names = gtk4::SizeGroup::new(gtk4::SizeGroupMode::Horizontal);
+
         for row in session.rows() {
             match row {
                 Row::Group { app_id, name } => {
                     let name = self.name(app_id, name);
                     windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
-                    let block = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+                    // A row of windows scrolls sideways on its own when there
+                    // are more of them than the panel is wide.
+                    let sideways = gtk4::ScrolledWindow::new();
+                    sideways.set_child(Some(&windows));
+                    sideways.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+                    sideways.set_propagate_natural_height(true);
+                    sideways.set_hexpand(true);
+
                     // The icon is still looked up by `app_id`: it is what the
                     // desktop entry is named after, not what the window calls
                     // itself.
-                    block.append(&group_header(
+                    let header = group_header(
                         &name,
                         app_id,
                         triggers.get(app_id).map(String::as_str),
                         self.icons.get(),
-                    ));
-                    block.append(&windows);
+                    );
+                    names.add_widget(&header);
 
-                    self.strip.append(&block);
+                    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
+                    row.add_css_class("row");
+                    row.append(&header);
+                    row.append(&sideways);
+
+                    self.strip.append(&row);
                 }
                 // A window without a title is better named by its application
                 // than by an empty tile.
@@ -443,24 +469,28 @@ fn line(label: &gtk4::Label) {
 /// An application's name, its icon, and the key that switches to it.
 fn group_header(name: &str, app_id: &str, trigger: Option<&str>, icons: bool) -> gtk4::Box {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+    header.set_valign(gtk4::Align::Center);
 
     if let Some(icon) = icons.then(|| app_icon(app_id)).flatten() {
         header.append(&icon);
     }
-
-    let label = gtk4::Label::new(Some(&name.to_uppercase()));
-    label.add_css_class("group");
-    // The name takes what the tiles beneath it leave, and gives way before
-    // the key does: an ellipsised label would otherwise ask for nothing and
-    // get it.
-    line(&label);
-    header.append(&label);
 
     if let Some(trigger) = trigger {
         let key = gtk4::Label::new(Some(trigger));
         key.add_css_class("keycap");
         header.append(&key);
     }
+
+    let label = gtk4::Label::new(Some(&name.to_uppercase()));
+    label.add_css_class("group");
+    label.set_xalign(0.0);
+    // The name is the last thing in the row's label, so it is what gives way
+    // when an application is called something long. It asks for room for a
+    // sensible name and ellipsises past that, rather than hexpanding — the
+    // windows beside it want that width.
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_max_width_chars(NAME_WIDTH);
+    header.append(&label);
 
     header
 }

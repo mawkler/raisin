@@ -63,7 +63,7 @@ cancel = "Escape"         # close without switching
 [keys.apps]
 t = "ghostty"                                        # Super + t
 s = "spotify"
-i = { cmd = "brave", app_id = "brave-browser" }      # when the window class differs
+w = { cmd = "brave", app_id = "brave-browser" }      # when the window class differs
 
 [switcher]
 delay = 90          # milliseconds Super has to stay held before the switcher appears
@@ -128,7 +128,7 @@ The flake exports a module:
     enable = true;
     settings.keys.apps = {
       t = "ghostty";
-      i = {
+      w = {
         cmd = "brave";
         app_id = "brave-browser";
       };
