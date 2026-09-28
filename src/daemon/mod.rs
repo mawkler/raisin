@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 use gtk4::glib;
 
 use crate::compositor::Compositor as _;
+use crate::compositor::Window;
 use crate::compositor::integrations::hyprland::{
     self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, LAUNCH_EVENT, NEXT_EVENT, PREVIOUS_EVENT,
     SWITCH_EVENT,
@@ -301,7 +302,7 @@ impl Daemon {
     /// the controller decide what it means.
     fn trigger(self: &Rc<Self>, target: Target, direction: Direction) {
         let windows = match self.compositor.get_windows() {
-            Ok(windows) => windows,
+            Ok(windows) => mapped(&self.config(), windows),
             Err(error) => {
                 eprintln!("raisin: {error:#}");
                 return;
@@ -524,6 +525,27 @@ fn triggers(config: &Config, session: &Session) -> HashMap<String, String> {
             let group = session.find_group(target.search())?;
 
             Some((group.to_owned(), key.to_string()))
+        })
+        .collect()
+}
+
+/// The windows of applications the user has a key for.
+///
+/// Everything else is left out: the switcher is a way of reaching the
+/// applications that were given keys, and a row nothing reaches is noise.
+/// Matched the way [`switcher::find_group`] matches, so a window is kept
+/// exactly when some key would find it.
+fn mapped(config: &Config, windows: Vec<Window>) -> Vec<Window> {
+    windows
+        .into_iter()
+        .filter(|window| {
+            let app_id = window.app_id.to_lowercase();
+
+            config.keys.apps.values().any(|target| {
+                let search = target.search().to_lowercase();
+
+                app_id == search || app_id.contains(&search)
+            })
         })
         .collect()
 }

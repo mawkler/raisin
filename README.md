@@ -27,9 +27,11 @@ It binds `Super` + a letter for every application in `[keys.apps]`, so adding an
 line of configuration — no compositor configuration to edit, and no restart.
 
 - Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
-- Keep `Super` held a moment longer and the switcher appears: every open window, grouped by
-  application, with the one you'd get highlighted. The windows you're choosing between show what
-  they currently look like.
+- Keep `Super` held a moment longer and the switcher appears: a row per application you gave a key
+  to, with the one you'd get highlighted. The application you're switching to shows what its
+  windows currently look like; the others show a marker per window, and the ones with nothing open
+  share a line so their keys are still to hand. Applications you haven't given a key to are left
+  out.
 - Press the same letter again to cycle through that application's windows, press another mapped
   letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
   cancel.
