@@ -371,13 +371,16 @@ impl Bind {
     /// What the bind is called in Hyprland's Lua state.
     ///
     /// The definition is part of the name, so changing a key or a flag makes a
-    /// new bind rather than re-enabling the one the last run left behind.
+    /// new bind rather than re-enabling the one the last run left behind. The
+    /// options are named in full rather than by their legacy letters: not
+    /// every one of them has a letter, and a bind whose options changed but
+    /// whose name didn't would be silently kept as it was.
     fn lua_name(&self) -> String {
         format!(
             "{}@{}#{}",
             self.name,
             self.keys(ConfigLanguage::Lua),
-            self.flags.letters()
+            self.flags.set().join("+")
         )
     }
 
@@ -413,8 +416,8 @@ impl Flags {
             .collect()
     }
 
-    /// The same, as the table the Lua parser takes.
-    fn options(self) -> String {
+    /// Which of them are set, by the name the Lua parser knows them by.
+    fn set(self) -> Vec<&'static str> {
         let options = [
             (self.release, "release"),
             (self.transparent, "transparent"),
@@ -422,9 +425,18 @@ impl Flags {
             (self.ignore_mods, "ignore_mods"),
         ];
 
-        let options: Vec<_> = options
+        options
             .into_iter()
-            .filter_map(|(set, option)| set.then_some(format!("{option} = true")))
+            .filter_map(|(set, option)| set.then_some(option))
+            .collect()
+    }
+
+    /// The same, as the table the Lua parser takes.
+    fn options(self) -> String {
+        let options: Vec<_> = self
+            .set()
+            .into_iter()
+            .map(|option| format!("{option} = true"))
             .collect();
 
         if options.is_empty() {
