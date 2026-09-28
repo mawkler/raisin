@@ -366,7 +366,7 @@ fn default_delay() -> u64 {
 }
 
 fn default_width() -> Size {
-    Size::Portion(0.6)
+    Size::Portion(0.5)
 }
 
 fn default_max_height() -> Size {

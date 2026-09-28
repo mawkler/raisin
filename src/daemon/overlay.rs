@@ -69,16 +69,19 @@ window.raisin > widget {
     padding: 2px 0;
 }
 
-/* One window of an application that isn't the one being switched to: the
-   thumbnail's own frame, at a fraction of its height. */
+/* One window of an application that isn't the one being switched to. The
+   thumbnail's frame is nearly black, which reads as a window showing
+   something; these show nothing, so they are a plain grey instead. */
 .pill {
     border-radius: 4px;
+    border-color: alpha(#ffffff, 0.14);
+    background-color: alpha(#8f98ac, 0.20);
 }
 
 .marker {
-    color: #9aa3b8;
-    font-size: 10px;
-    padding: 0 5px;
+    color: #c4cad8;
+    font-size: 12px;
+    padding: 0 6px;
 }
 
 /* An application with nothing open: there to show its key, and no more. */
@@ -122,9 +125,22 @@ window.raisin > widget {
 }
 
 .footer {
+    padding: 16px 4px 0 4px;
+}
+
+/* What each key does. Level with the key beside it, so it needs no padding
+   of its own. */
+.hint {
     color: #6e7688;
     font-size: 11px;
-    padding: 16px 4px 0 4px;
+}
+
+/* The keys in the footer say what raisin does rather than name a window, so
+   they wear the same grey as the markers rather than the panel's own. */
+.hint-key {
+    color: #c4cad8;
+    border-color: alpha(#ffffff, 0.14);
+    background-color: alpha(#8f98ac, 0.20);
 }
 
 .keycap {
@@ -754,24 +770,24 @@ fn group_header(
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
     header.set_valign(gtk4::Align::Center);
 
+    if let Some(trigger) = trigger {
+        let key = gtk4::Label::new(Some(trigger));
+        key.add_css_class("keycap");
+        header.append(&key);
+    }
+
     if icons {
         match app_icon(app_id, icon) {
             Some(icon) => header.append(&icon),
             // An application the icon theme has nothing for still takes the
-            // room an icon would have, or its key and name would sit a little
-            // to the left of everyone else's.
+            // room an icon would have, or the names after it would sit a
+            // little to the left of everyone else's.
             None => {
                 let gap = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
                 gap.set_size_request(ICON_SIZE, ICON_SIZE);
                 header.append(&gap);
             }
         }
-    }
-
-    if let Some(trigger) = trigger {
-        let key = gtk4::Label::new(Some(trigger));
-        key.add_css_class("keycap");
-        header.append(&key);
     }
 
     let label = gtk4::Label::new(Some(&name.to_uppercase()));
@@ -998,15 +1014,23 @@ fn shape(size: Option<(u32, u32)>) -> f32 {
 fn footer(keys: &config::Keys) -> gtk4::Box {
     let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
     footer.add_css_class("footer");
+    // Off to the right, where it stays out of the way of the names running
+    // down the left.
+    footer.set_halign(gtk4::Align::End);
 
     let keycap = |key: &str| {
         let label = gtk4::Label::new(Some(key));
         label.add_css_class("keycap");
+        label.add_css_class("hint-key");
         label
     };
     let hint = |text: &str| {
         let label = gtk4::Label::new(Some(text));
-        label.add_css_class("footer");
+        // Its own class, not the footer's: the footer's padding is what holds
+        // the whole row clear of the strip above it, and on a label it would
+        // pad the text itself downwards instead.
+        label.add_css_class("hint");
+        label.set_valign(gtk4::Align::Center);
         label
     };
 

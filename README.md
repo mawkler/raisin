@@ -69,7 +69,7 @@ w = { cmd = "brave", app_id = "brave-browser" }      # when the window class dif
 
 [switcher]
 delay = 90          # milliseconds Super has to stay held before the switcher appears
-width = "60%"       # of the screen, or a number of pixels like 900; it scrolls past this
+width = "50%"       # of the screen, or a number of pixels like 900
 max_height = "40%"
 icons = true        # show each application's icon beside its name
 
