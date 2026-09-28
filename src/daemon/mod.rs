@@ -59,6 +59,8 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
 
     gtk4::init().context("failed to initialise GTK")?;
 
+    warn_about_missing(&config);
+
     let binds =
         Rc::new(Binds::install(&config).context("failed to install raisin's Hyprland keybinds")?);
 
@@ -140,6 +142,8 @@ impl Daemon {
 
         let previous = self.binds();
         previous.remove();
+
+        warn_about_missing(&config);
 
         match Binds::install(&config) {
             Ok(binds) => {
@@ -529,6 +533,33 @@ fn triggers(config: &Config, session: &Session) -> HashMap<String, String> {
         .collect()
 }
 
+/// Whether the command an application is started with is somewhere on `PATH`.
+fn installed(cmd: &str) -> bool {
+    // A command given as a path is its own answer.
+    if cmd.contains('/') {
+        return Path::new(cmd).is_file();
+    }
+
+    let Some(path) = std::env::var_os("PATH") else {
+        return true;
+    };
+
+    std::env::split_paths(&path).any(|directory| directory.join(cmd).is_file())
+}
+
+/// Says which configured applications aren't installed, once, rather than
+/// leaving their keys to fail quietly.
+fn warn_about_missing(config: &Config) {
+    for (key, target) in &config.keys.apps {
+        if !installed(&target.app) {
+            eprintln!(
+                "raisin: {} isn't installed, so {key} has nothing to switch to",
+                target.app
+            );
+        }
+    }
+}
+
 /// The windows of applications the user has a key for.
 ///
 /// Everything else is left out: the switcher is a way of reaching the
@@ -558,6 +589,9 @@ fn absent(config: &Config, session: &Session) -> Vec<Absent> {
         .apps
         .iter()
         .filter(|(_, target)| session.find_group(target.search()).is_none())
+        // A row for something that can't start is worse than no row: its key
+        // does nothing, and it takes space from the applications that work.
+        .filter(|(_, target)| installed(&target.app))
         .map(|(key, target)| Absent {
             app_id: target.search().to_lowercase(),
             app: target.app.clone(),
