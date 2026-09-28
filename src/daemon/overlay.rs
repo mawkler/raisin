@@ -127,6 +127,23 @@ scrollbar {
 }
 ";
 
+/// What a desktop entry says about an application.
+struct Entry {
+    /// The entry's own file name, without `.desktop`.
+    entry: String,
+    /// The command it runs, without its path.
+    runs: String,
+    /// The window class it says its windows carry. This is the field made for
+    /// recognising an application's windows, and the one worth trusting: Zen's
+    /// entry is `zen-beta`, Beeper's is `beepertexts`, and neither is what
+    /// their windows are called.
+    class: String,
+    name: String,
+    /// The icon theme's name for it, which is again its own: Beeper's windows
+    /// say `Beeper` and its icon is `beepertexts`.
+    icon: String,
+}
+
 /// An application that is configured but has no windows open. It still gets a
 /// row, so its key is somewhere to be seen rather than only in the
 /// configuration file.
@@ -181,12 +198,11 @@ pub(crate) struct Overlay {
     /// What to call each application, by `app_id`, for the ones the user would
     /// rather name themselves.
     names: RefCell<BTreeMap<String, String>>,
-    /// Every desktop entry on the system, as `(name of the entry, the command
-    /// it runs, what it calls the application)`.
+    /// Every desktop entry on the system.
     ///
-    /// Read once and kept: asking for them walks every entry on the system,
-    /// which is far too much to do while a switch is waiting to appear.
-    entries: OnceCell<Vec<(String, String, String)>>,
+    /// Read once and kept: walking every entry on the system is far too much
+    /// to do while a switch is waiting to appear.
+    entries: OnceCell<Vec<Entry>>,
 }
 
 impl Overlay {
@@ -370,6 +386,7 @@ impl Overlay {
             let header = group_header(
                 name,
                 app_id,
+                self.icon_name(app_id).as_deref(),
                 triggers.get(*app_id).map(String::as_str),
                 self.icons.get(),
                 Some(NAME_WIDTH),
@@ -400,6 +417,7 @@ impl Overlay {
                 chips.append(&group_header(
                     name,
                     &application.app_id,
+                    self.icon_name(&application.app_id).as_deref(),
                     Some(&application.trigger),
                     self.icons.get(),
                     None,
@@ -460,7 +478,13 @@ impl Overlay {
         let preview =
             (previews.enabled && !window.identifier.is_empty()).then_some(previews.height);
 
-        let (tile, thumbnail) = tile(title, preview, shape(window.size), &window.app_id);
+        let (tile, thumbnail) = tile(
+            title,
+            preview,
+            shape(window.size),
+            &window.app_id,
+            self.icon_name(&window.app_id).as_deref(),
+        );
 
         if let Some(thumbnail) = thumbnail {
             if let Some(texture) = self.textures.borrow().get(&window.identifier) {
@@ -492,20 +516,37 @@ impl Overlay {
             return name.clone();
         }
 
-        let entries = self.entries.get_or_init(desktop_entries);
-        let wanted = [
-            application.app_id.to_lowercase(),
-            application.app.to_lowercase(),
-        ];
+        self.entry(&application.app_id, Some(&application.app))
+            .map_or_else(|| application.app.clone(), |entry| entry.name.clone())
+    }
 
-        // An exact match on the entry's own name comes first: a system can
-        // carry several entries running the same command, and the extras tend
-        // to be named after the command rather than after the application.
+    /// The desktop entry for an application, if one of them is plainly about
+    /// it.
+    ///
+    /// The window class it declares comes first, then its own file name, then
+    /// the command it runs: a system can carry several entries running one
+    /// command, and the extras tend to say less about the application.
+    fn entry(&self, app_id: &str, cmd: Option<&str>) -> Option<&Entry> {
+        let entries = self.entries.get_or_init(desktop_entries);
+        let wanted: Vec<String> = std::iter::once(app_id)
+            .chain(cmd)
+            .map(str::to_lowercase)
+            .collect();
+        let matches = |field: &String| !field.is_empty() && wanted.contains(field);
+
         entries
             .iter()
-            .find(|(entry, ..)| wanted.contains(entry))
-            .or_else(|| entries.iter().find(|(_, runs, _)| wanted.contains(runs)))
-            .map_or_else(|| application.app.clone(), |(.., name)| name.clone())
+            .find(|entry| matches(&entry.class))
+            .or_else(|| entries.iter().find(|entry| matches(&entry.entry)))
+            .or_else(|| entries.iter().find(|entry| matches(&entry.runs)))
+    }
+
+    /// What the icon theme calls an application's icon, when its desktop entry
+    /// says something other than the window class.
+    fn icon_name(&self, app_id: &str) -> Option<String> {
+        self.entry(app_id, None)
+            .map(|entry| entry.icon.clone())
+            .filter(|icon| !icon.is_empty())
     }
 
     /// What to call an application: what the user called it, if they said.
@@ -641,6 +682,7 @@ fn pill(shape: f32, thumbnail: u32) -> gtk4::Box {
 fn group_header(
     name: &str,
     app_id: &str,
+    icon: Option<&str>,
     trigger: Option<&str>,
     icons: bool,
     width: Option<i32>,
@@ -649,7 +691,7 @@ fn group_header(
     header.set_valign(gtk4::Align::Center);
 
     if icons {
-        match app_icon(app_id) {
+        match app_icon(app_id, icon) {
             Some(icon) => header.append(&icon),
             // An application the icon theme has nothing for still takes the
             // room an icon would have, or its key and name would sit a little
@@ -693,7 +735,7 @@ fn group_header(
 /// Read straight off the disk rather than asked of GIO, whose answer comes
 /// through D-Bus and can block — which is the last thing wanted on the path
 /// that has to put the switcher on screen.
-fn desktop_entries() -> Vec<(String, String, String)> {
+fn desktop_entries() -> Vec<Entry> {
     let home = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")));
@@ -726,8 +768,9 @@ fn desktop_entries() -> Vec<(String, String, String)> {
                 continue;
             };
 
-            if let Some((name, runs)) = describes(&text) {
-                entries.push((entry.to_lowercase(), runs, name));
+            if let Some(mut described) = describes(&text) {
+                described.entry = entry.to_lowercase();
+                entries.push(described);
             }
         }
     }
@@ -735,47 +778,72 @@ fn desktop_entries() -> Vec<(String, String, String)> {
     entries
 }
 
-/// The name a desktop entry gives its application, and the command it runs.
-fn describes(text: &str) -> Option<(String, String)> {
-    let (mut name, mut runs) = (None, None);
+/// What a desktop entry says, as far as the switcher cares.
+fn describes(text: &str) -> Option<Entry> {
+    let mut entry = Entry {
+        entry: String::new(),
+        runs: String::new(),
+        class: String::new(),
+        name: String::new(),
+        icon: String::new(),
+    };
+    let mut started = false;
 
     for line in text.lines() {
         // Entries carry a section per language and per action; only the first
         // one describes the application itself.
-        if line.starts_with('[') && (name.is_some() || runs.is_some()) {
-            break;
+        if line.starts_with('[') {
+            if started {
+                break;
+            }
+
+            started = true;
+            continue;
         }
 
-        if let Some(value) = line.strip_prefix("Name=") {
-            name.get_or_insert_with(|| value.trim().to_owned());
-        } else if let Some(value) = line.strip_prefix("Exec=") {
-            runs.get_or_insert_with(|| {
-                value
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim();
+
+        match key {
+            "Name" if entry.name.is_empty() => entry.name = value.to_owned(),
+            "Icon" if entry.icon.is_empty() => entry.icon = value.to_owned(),
+            "StartupWMClass" if entry.class.is_empty() => entry.class = value.to_lowercase(),
+            "Exec" if entry.runs.is_empty() => {
+                entry.runs = value
                     .split_whitespace()
                     .next()
                     .unwrap_or_default()
                     .rsplit('/')
                     .next()
                     .unwrap_or_default()
-                    .to_lowercase()
-            });
+                    .to_lowercase();
+            }
+            _ => {}
         }
     }
 
-    Some((name?, runs.unwrap_or_default()))
+    (!entry.name.is_empty()).then_some(entry)
 }
 
 /// The application's own icon, if the icon theme has one under a name the
 /// window class suggests.
-fn app_icon(app_id: &str) -> Option<gtk4::Image> {
+fn app_icon(app_id: &str, icon: Option<&str>) -> Option<gtk4::Image> {
     let theme = gtk4::IconTheme::for_display(&gdk::Display::default()?);
     let last = app_id.rsplit('.').next().unwrap_or(app_id);
-    let candidates = [
-        app_id.to_owned(),
-        app_id.to_lowercase(),
-        last.to_owned(),
-        last.to_lowercase(),
-    ];
+    // What the desktop entry names first: it knows, where the window class is
+    // only a guess that happens to be right most of the time.
+    let candidates: Vec<String> = icon
+        .map(str::to_owned)
+        .into_iter()
+        .chain([
+            app_id.to_owned(),
+            app_id.to_lowercase(),
+            last.to_owned(),
+            last.to_lowercase(),
+        ])
+        .collect();
 
     let name = candidates.iter().find(|name| theme.has_icon(name))?;
     let icon = gtk4::Image::from_icon_name(name);
@@ -795,6 +863,7 @@ fn tile(
     preview: Option<u32>,
     shape: f32,
     app_id: &str,
+    icon: Option<&str>,
 ) -> (gtk4::Box, Option<Thumbnailed>) {
     let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     tile.add_css_class("tile");
@@ -817,7 +886,7 @@ fn tile(
         // without drawing one it isn't showing. The application's own icon
         // says which window the tile is, where an empty frame says only that
         // something is broken.
-        let standin = app_icon(app_id).inspect(|icon| {
+        let standin = app_icon(app_id, icon).inspect(|icon| {
             icon.set_pixel_size(height as i32 / 2);
             icon.add_css_class("standin");
             icon.set_vexpand(true);
