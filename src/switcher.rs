@@ -47,14 +47,14 @@ pub(crate) enum Direction {
     Backward,
 }
 
-/// What to call a group on screen.
+/// The name a group's windows opened under, for an application whose desktop
+/// entry the switcher couldn't find.
 ///
 /// Applications put their own name in a window's title before they have a
-/// document to name instead, so the name a group's windows opened under is
-/// usually the application's — `Ghostty` rather than `com.mitchellh.ghostty`.
-/// It isn't guaranteed: a window that was still loading may have said
-/// something useless, and two windows of one application may disagree, so the
-/// name most of them opened under wins and the `app_id` is the fallback.
+/// document to name instead, so this is usually the application's own name —
+/// but only usually: a window that was still loading may have said something
+/// useless, and two windows of one application may disagree. The name most of
+/// them opened under wins, and the `app_id` is the last resort.
 fn group_name<'a>(app_id: &'a str, windows: &'a [Window]) -> &'a str {
     let names = windows
         .iter()

@@ -77,18 +77,20 @@ icons = true        # show each application's icon beside its name
 enabled = true    # show what each window looks like
 height = 105      # pixels tall; every thumbnail is, and the width follows the window
 
-# What to call an application, by the window class it uses. Optional: without
-# an entry a group is named after the title its windows opened under.
+# What to call an application, by the window class it uses. Optional: the name
+# comes from the application's desktop entry otherwise.
 [names]
 brave-browser = "Brave"
 "com.mitchellh.ghostty" = "Ghostty"
 ```
 
-A group is named after the title its windows carried when they opened, which is usually the
-application's own name — `Ghostty` rather than `com.mitchellh.ghostty`. Applications that open
-onto something else are worth naming yourself: Brave's windows start out called `New Tab - Brave`.
-Use `[names]` for those; the key is the window class, which is the part that doesn't change as you
-use the application.
+An application is named after its desktop entry — `Files`, not `org.gnome.Nautilus` — found by the
+window class the entry declares in `StartupWMClass`. Where no entry describes it, raisin falls
+back to the title its windows opened under, and then to the class itself.
+
+`[names]` overrides all of that, for when you disagree with the entry: `Zen Browser (Beta)` is a
+lot of row to give a browser. The key is the window class, which is the part that doesn't change
+as you use the application.
 
 You hold `Super` throughout a switch, so it's implied: `next = "Tab"` means Super and Tab.
 

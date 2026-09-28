@@ -345,7 +345,7 @@ impl Overlay {
         for row in session.rows() {
             match row {
                 Row::Group { app_id, name } => {
-                    groups.push((app_id, self.name(app_id, name), Vec::new()));
+                    groups.push((app_id, self.label(app_id, None, name), Vec::new()));
                 }
                 Row::Window { window, .. } => {
                     if let Some((.., windows)) = groups.last_mut() {
@@ -407,7 +407,16 @@ impl Overlay {
         if !absent.is_empty() {
             let mut waiting: Vec<_> = absent
                 .iter()
-                .map(|application| (self.absent_name(application), application))
+                .map(|application| {
+                    (
+                        self.label(
+                            &application.app_id,
+                            Some(&application.app),
+                            &application.app,
+                        ),
+                        application,
+                    )
+                })
                 .collect();
             waiting.sort_by_key(|(name, _)| name.to_lowercase());
 
@@ -460,7 +469,7 @@ impl Overlay {
 
     /// Names the application the switch now points at.
     pub(crate) fn set_heading(&self, session: &Session) {
-        let name = self.name(session.group(), session.label());
+        let name = self.label(session.group(), None, session.label());
 
         self.heading.set_text(&format!("Switch to {name}"));
     }
@@ -506,20 +515,6 @@ impl Overlay {
         self.textures.borrow().contains_key(identifier)
     }
 
-    /// What to call an application with nothing open.
-    ///
-    /// There are no windows to take a name from, and the command that would
-    /// start it is a poor label — `teams-for-linux` rather than `Teams for
-    /// Linux` — so its desktop entry is asked before falling back to that.
-    fn absent_name(&self, application: &Absent) -> String {
-        if let Some(name) = self.names.borrow().get(&application.app_id) {
-            return name.clone();
-        }
-
-        self.entry(&application.app_id, Some(&application.app))
-            .map_or_else(|| application.app.clone(), |entry| entry.name.clone())
-    }
-
     /// The desktop entry for an application, if one of them is plainly about
     /// it.
     ///
@@ -549,12 +544,23 @@ impl Overlay {
             .filter(|icon| !icon.is_empty())
     }
 
-    /// What to call an application: what the user called it, if they said.
-    fn name(&self, app_id: &str, otherwise: &str) -> String {
-        self.names
-            .borrow()
-            .get(app_id)
-            .map_or_else(|| otherwise.to_owned(), Clone::clone)
+    /// What to call an application on screen.
+    ///
+    /// What the user called it wins. Then what its desktop entry calls it,
+    /// which is the application's own name rather than anything inferred from
+    /// it — `Files` rather than `org.gnome.Nautilus`, and `Gram` rather than
+    /// whichever document its first window happens to have open.
+    ///
+    /// `otherwise` is the last resort, for an application no entry describes:
+    /// the name its windows opened under when it is running, and the command
+    /// that would start it when it isn't.
+    fn label(&self, app_id: &str, cmd: Option<&str>, otherwise: &str) -> String {
+        if let Some(name) = self.names.borrow().get(app_id) {
+            return name.clone();
+        }
+
+        self.entry(app_id, cmd)
+            .map_or_else(|| otherwise.to_owned(), |entry| entry.name.clone())
     }
 
     /// Remembers what a window looks like, and shows it if the window still
