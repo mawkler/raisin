@@ -41,11 +41,20 @@ window.raisin > widget {
     box-shadow: 0 20px 50px alpha(#000000, 0.55);
 }
 
+.title-bar {
+    padding: 0 4px 14px 4px;
+}
+
 .heading {
     color: #eef1f7;
     font-size: 15px;
     font-weight: 600;
-    padding: 0 4px 14px 4px;
+}
+
+/* The window the switch would land on, beside the application's name. */
+.subject {
+    color: #78819a;
+    font-size: 13px;
 }
 
 .group {
@@ -64,6 +73,12 @@ window.raisin > widget {
    thumbnail's own frame, at a fraction of its height. */
 .pill {
     border-radius: 4px;
+}
+
+.marker {
+    color: #9aa3b8;
+    font-size: 10px;
+    padding: 0 5px;
 }
 
 /* An application with nothing open: there to show its key, and no more. */
@@ -176,6 +191,8 @@ impl Thumbnailed {
 pub(crate) struct Overlay {
     window: gtk4::Window,
     heading: gtk4::Label,
+    /// The window a release of Super would land on.
+    subject: gtk4::Label,
     /// The applications, side by side.
     strip: gtk4::Box,
     /// Each window's tile, by the window it stands for, so that the highlight
@@ -231,7 +248,18 @@ impl Overlay {
 
         let heading = gtk4::Label::new(None);
         heading.add_css_class("heading");
-        line(&heading);
+
+        // The window the switch would land on, beside the application's name:
+        // with one row of thumbnails among rows of markers, the heading is
+        // where you read what you are actually about to get.
+        let subject = gtk4::Label::new(None);
+        subject.add_css_class("subject");
+        line(&subject);
+
+        let title = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        title.add_css_class("title-bar");
+        title.append(&heading);
+        title.append(&subject);
 
         let strip = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
 
@@ -251,7 +279,7 @@ impl Overlay {
 
         let panel = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         panel.add_css_class("panel");
-        panel.append(&heading);
+        panel.append(&title);
         panel.append(&scroll);
         panel.append(&footer);
 
@@ -267,6 +295,7 @@ impl Overlay {
         Ok(Self {
             window,
             heading,
+            subject,
             strip,
             tiles: RefCell::new(HashMap::new()),
             selected: RefCell::new(None),
@@ -369,7 +398,13 @@ impl Overlay {
                 if targeted {
                     self.append_tile(&windows, window, previews);
                 } else {
-                    windows.append(&pill(shape(window.size), previews.height));
+                    let title = if window.title.is_empty() {
+                        &window.app_id
+                    } else {
+                        &window.title
+                    };
+
+                    windows.append(&pill(title, shape(window.size), previews.height));
                 }
             }
 
@@ -467,11 +502,19 @@ impl Overlay {
             .retain(|identifier, _| open.contains(identifier.as_str()));
     }
 
-    /// Names the application the switch now points at.
+    /// Names the application the switch now points at, and the window it
+    /// would land on.
     pub(crate) fn set_heading(&self, session: &Session) {
         let name = self.label(session.group(), None, session.label());
+        let window = session.selected_window();
+        let title = if window.title.is_empty() {
+            &window.app_id
+        } else {
+            &window.title
+        };
 
         self.heading.set_text(&format!("Switch to {name}"));
+        self.subject.set_text(title);
     }
 
     /// Puts a window's tile into `row`, showing whatever has been captured of
@@ -607,6 +650,7 @@ impl Overlay {
             return;
         };
 
+        self.set_heading(session);
         tile.add_css_class("selected");
         tile.grab_focus();
         self.selected.replace(Some(tile));
@@ -664,18 +708,32 @@ fn line(label: &gtk4::Label) {
 /// It is exactly as wide as that window's thumbnail would have been, so a row
 /// of markers has the same rhythm as the row of thumbnails it stands in for —
 /// only a line tall instead of a thumbnail tall.
-fn pill(shape: f32, thumbnail: u32) -> gtk4::Box {
-    let pill = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+fn pill(title: &str, shape: f32, thumbnail: u32) -> gtk4::Box {
+    let pill = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     // The same frame a thumbnail sits in, so a marker reads as the window it
     // stands for rather than as a blob.
     pill.add_css_class("thumbnail");
     pill.add_css_class("pill");
     pill.set_valign(gtk4::Align::Center);
+    // Explicitly, so the name inside can expand to fill the marker without the
+    // marker itself expanding to fill the row.
+    pill.set_hexpand(false);
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let width = (thumbnail as f32 * shape) as i32;
     // Even the narrowest window has to be visible as something.
     pill.set_size_request(width.max(4), PILL);
+
+    let label = gtk4::Label::new(Some(title));
+    label.add_css_class("marker");
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_xalign(0.0);
+    // The name fills the marker, and asks for no width of its own: a marker
+    // that grew to fit its window's title would stop being that window's
+    // size, which is the whole point of it.
+    label.set_hexpand(true);
+    label.set_max_width_chars(1);
+    pill.append(&label);
 
     pill
 }
