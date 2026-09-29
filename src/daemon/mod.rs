@@ -215,12 +215,23 @@ impl Daemon {
                     eprintln!("raisin: {error:#}");
                 }
             }
-            Effect::Launch(app) => {
-                if let Err(error) = self.compositor.launch_application(&app) {
-                    eprintln!("raisin: {error:#}");
-                }
-            }
+            Effect::Launch(target) => self.launch(&target),
         }
+    }
+
+    /// Starts an application, and says so.
+    ///
+    /// Both ways of asking for one come through here: the key for something
+    /// with no windows, and Ctrl with the key for another copy of something
+    /// that has. Neither shows the switcher, so without this nothing would
+    /// happen on screen until the application itself got round to appearing.
+    fn launch(&self, target: &Target) {
+        if let Err(error) = self.compositor.launch_application(&target.app) {
+            eprintln!("raisin: {error:#}");
+            return;
+        }
+
+        self.overlay.starting(target.search(), &target.app);
     }
 
     /// Asks for a thumbnail of every window on screen, the group being
@@ -393,9 +404,7 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
             // open: there is then nothing to end.
             daemon.handle(Event::Cancel);
 
-            if let Err(error) = daemon.compositor.launch_application(&target.app) {
-                eprintln!("raisin: {error:#}");
-            }
+            daemon.launch(target);
         }
         "custom" => {
             let pressed = [

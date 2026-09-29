@@ -3,6 +3,8 @@
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use gtk4::prelude::*;
@@ -25,6 +27,45 @@ const NAME_WIDTH: i32 = 14;
 /// How tall the marker standing in for a window of an application that isn't
 /// the one being switched to is. Its width comes from the window.
 const PILL: i32 = 24;
+
+/// How big the icon of an application that was just started is drawn at the
+/// moment it is most solid.
+const STARTING_SIZE: i32 = 96;
+
+/// How far it drifts up as it appears.
+const LIFT: f32 = 10.0;
+
+/// How small it starts and how large it ends, against that size. It arrives at
+/// its own size and then keeps growing, so that it swells away as it fades
+/// rather than standing still while it goes.
+const GROW: f32 = 0.85;
+const GROWN: f32 = 1.4;
+
+/// How solid the icon already is at the moment it appears.
+///
+/// It starts part of the way in rather than from nothing: what it is there to
+/// say is that something happened just now, and a fade that begins at nothing
+/// says it a moment late.
+const FAINT: f32 = 0.35;
+
+/// Arriving, and then leaving again, in milliseconds. Quick to arrive and
+/// slower to leave: what it says is that something has started, which is
+/// worth a glance and no more.
+///
+/// There is no pause between the two. It doesn't need one: the fade is slow
+/// to start, which leaves a moment where the icon is simply there.
+const APPEARING: f32 = 70.0;
+const LEAVING: f32 = 250.0;
+
+/// How long after that the window comes down regardless.
+///
+/// Frames only arrive while something is being drawn, so they can't be trusted
+/// to end anything: a window that never gets one would sit there for ever.
+const SLACK: f32 = 100.0;
+
+/// What is shown for an application the icon theme has nothing for. Something
+/// has to appear, or the animation says nothing at all.
+const FALLBACK_ICON: &str = "application-x-executable";
 
 /// How strongly a window's own colours are laid over the panel.
 ///
@@ -231,6 +272,15 @@ pub(crate) struct Overlay {
     tiles: RefCell<HashMap<String, gtk4::Box>>,
     selected: RefCell<Option<gtk4::Box>>,
     panel: gtk4::Box,
+    /// The switcher and the just-started icon, one of which the window shows.
+    faces: gtk4::Stack,
+    /// The face that says an application is starting, and the icon on it.
+    splash: gtk4::Box,
+    starting: gtk4::Image,
+    /// The animation in progress, if there is one: kept so that a switch can
+    /// cut it short, and so that it is only ever taken down once — whoever
+    /// gets here first takes it, and the other finds nothing.
+    playing: Rc<RefCell<Option<Playing>>>,
     scroll: gtk4::ScrolledWindow,
     footer: RefCell<gtk4::Box>,
     /// Where each window's thumbnail goes once it has been captured, by the
@@ -323,7 +373,39 @@ impl Overlay {
         panel.append(&scroll);
         panel.append(&footer);
 
-        window.set_child(Some(&panel));
+        // The window shows one of two things: the switcher, or the icon of an
+        // application that was just started. Swapping which keeps the one
+        // window, with its layer-shell setup and its warm renderer, rather
+        // than building a second one for a glance.
+        let starting = gtk4::Image::new();
+        starting.add_css_class("starting");
+        // The icon grows for as long as it is on screen, but the room it is
+        // drawn in doesn't: holding that at the size it ends at is half of
+        // what keeps the window from changing size while the animation runs.
+        starting.set_size_request(biggest(), biggest());
+
+        // The face that says an application is starting has no chrome of its
+        // own: the application's own logo is the whole of what it has to say.
+        let splash = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        splash.add_css_class("splash");
+        splash.append(&starting);
+        // Room is kept below the icon for it to drift up through, so that the
+        // face never changes size. This makes up the difference above it, so
+        // that the icon rests in the middle of the screen rather than above
+        // the middle of it.
+        #[allow(clippy::cast_possible_truncation)]
+        splash.set_margin_top(LIFT as i32);
+
+        let faces = gtk4::Stack::new();
+        faces.add_child(&panel);
+        faces.add_child(&splash);
+        // Each face is as big as it needs to be rather than as big as the
+        // larger of the two: the splash is a chip around an icon, and a stack
+        // left to itself would paint it across the whole width of the panel.
+        faces.set_hhomogeneous(false);
+        faces.set_vhomogeneous(false);
+
+        window.set_child(Some(&faces));
 
         // Building the renderer costs a few hundred milliseconds, and paying
         // it on the first switch would hold up the main loop just as the user
@@ -340,6 +422,10 @@ impl Overlay {
             tiles: RefCell::new(HashMap::new()),
             selected: RefCell::new(None),
             panel,
+            faces,
+            splash,
+            starting,
+            playing: Rc::new(RefCell::new(None)),
             scroll,
             footer: RefCell::new(footer),
             thumbnails: RefCell::new(HashMap::new()),
@@ -762,10 +848,95 @@ impl Overlay {
     }
 
     pub(crate) fn show(&self) {
+        // A switch takes the window back from any animation still playing on
+        // it: whatever was starting, the user has moved on. The window goes
+        // down first, so that the change of face lands while it is off screen
+        // rather than as a jump in size.
+        if self.playing.borrow().is_some() {
+            self.window.set_visible(false);
+        }
+
+        self.stop();
+        self.faces.set_visible_child(&self.panel);
         self.window.present();
     }
 
+    /// Says that an application has been started, by showing its icon for
+    /// about as long as it takes to notice.
+    ///
+    /// Nothing waits for this. The application was launched before the first
+    /// frame was drawn, and a switch that arrives mid-animation simply takes
+    /// the window back.
+    pub(crate) fn starting(&self, app_id: &str, cmd: &str) {
+        let named = self
+            .entry(app_id, Some(cmd))
+            .map(|entry| entry.icon.clone())
+            .filter(|icon| !icon.is_empty());
+        let name = icon_named(app_id, named.as_deref())
+            .or_else(|| icon_named(cmd, None))
+            // Something has to appear, or the animation says nothing at all.
+            .unwrap_or_else(|| FALLBACK_ICON.to_owned());
+
+        self.stop();
+        self.starting.set_icon_name(Some(&name));
+        // The window goes up with the first frame already drawn on it, rather
+        // than with whatever the animation before it left behind.
+        if let Some(first) = frame(0.0) {
+            draw(&self.splash, &self.starting, first);
+        }
+        self.faces.set_visible_child(&self.splash);
+        self.window.present();
+
+        let splash = self.splash.clone();
+        let image = self.starting.clone();
+        // The clock is read rather than the wall time, and the first frame is
+        // whenever the compositor gets round to drawing one — which is not
+        // necessarily now.
+        let started: Cell<Option<i64>> = Cell::new(None);
+
+        let ticking = self.splash.add_tick_callback(move |_, clock| {
+            let now = clock.frame_time();
+            let start = started.get().unwrap_or_else(|| {
+                started.set(Some(now));
+                now
+            });
+            #[allow(clippy::cast_precision_loss)]
+            let elapsed = (now - start) as f32 / 1_000.0;
+
+            if let Some(shape) = frame(elapsed) {
+                draw(&splash, &image, shape);
+            }
+
+            glib::ControlFlow::Continue
+        });
+
+        // The timer is what ends the animation, rather than the last frame:
+        // it runs whether or not the window was ever drawn, and an overlay
+        // left on the screen would sit above everything, swallowing the
+        // clicks meant for whatever is under it.
+        let playing = Rc::clone(&self.playing);
+        let window = self.window.clone();
+        let ending = glib::timeout_add_local_once(lifetime(), move || {
+            if let Some(Playing { ticking, .. }) = playing.take() {
+                ticking.remove();
+            }
+
+            window.set_visible(false);
+        });
+
+        self.playing.replace(Some(Playing { ticking, ending }));
+    }
+
+    /// Takes the window back from an animation, whether or not one is playing.
+    fn stop(&self) {
+        if let Some(Playing { ticking, ending }) = self.playing.take() {
+            ticking.remove();
+            ending.remove();
+        }
+    }
+
     pub(crate) fn hide(&self) {
+        self.stop();
         self.window.set_visible(false);
     }
 }
@@ -837,6 +1008,98 @@ fn load_style() -> Result<gtk4::CssProvider> {
     }
 
     Ok(tints)
+}
+
+/// Where the icon is, `elapsed` milliseconds in, or `None` once it is over.
+///
+/// Two motions, laid over one another. Arriving, it drifts up and grows into
+/// itself while it fades in, slowing as it lands. Leaving, it goes on growing
+/// — quickly at first and then easing off — while the fade does the opposite,
+/// holding for a moment and then taking it all at once. The two pulling
+/// against each other is what makes it read as something opening rather than
+/// something simply being removed.
+#[allow(clippy::cast_possible_truncation)]
+fn frame(elapsed: f32) -> Option<Frame> {
+    if elapsed >= APPEARING + LEAVING {
+        return None;
+    }
+
+    // Each saturates at its own end of the animation, so no phase of it needs
+    // to be told apart from any other.
+    let arrived = eased(elapsed / APPEARING);
+    let gone = (elapsed - APPEARING) / LEAVING;
+    let above = ((1.0 - arrived) * LIFT) as i32;
+
+    Some(Frame {
+        opacity: (FAINT + (1.0 - FAINT) * arrived) * (1.0 - gathering(gone)),
+        above,
+        below: LIFT as i32 - above,
+        size: ((GROW + (1.0 - GROW) * arrived + (GROWN - 1.0) * eased(gone))
+            * STARTING_SIZE as f32) as i32,
+    })
+}
+
+/// Puts one frame of the animation on screen.
+fn draw(splash: &gtk4::Box, icon: &gtk4::Image, shape: Frame) {
+    splash.set_opacity(f64::from(shape.opacity));
+    // The space above and below the icon always adds up to the same, so that
+    // it drifts without the face changing size under it.
+    icon.set_margin_top(shape.above);
+    icon.set_margin_bottom(shape.below);
+    icon.set_pixel_size(shape.size);
+}
+
+/// The room the icon is drawn in: as big as it ever gets, so that the face it
+/// is on is one size from the first frame to the last.
+#[allow(clippy::cast_possible_truncation)]
+fn biggest() -> i32 {
+    (GROWN * STARTING_SIZE as f32) as i32
+}
+
+/// Where the icon is at one moment: how solid it is, the space above and below
+/// it, and how big it is drawn.
+#[derive(Clone, Copy)]
+struct Frame {
+    opacity: f32,
+    above: i32,
+    below: i32,
+    size: i32,
+}
+
+/// An animation in progress: the frames it draws, and the timer that ends it.
+struct Playing {
+    ticking: gtk4::TickCallbackId,
+    ending: glib::SourceId,
+}
+
+/// How long the window stays up for: the animation, and a moment after it for
+/// a first frame that arrives late.
+fn lifetime() -> Duration {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Duration::from_millis((APPEARING + LEAVING + SLACK) as u64)
+}
+
+/// Fast to begin with and slowing as it arrives, which is how things move when
+/// they are settling into place rather than being pushed.
+fn eased(through: f32) -> f32 {
+    let left = 1.0 - through.clamp(0.0, 1.0);
+
+    1.0 - left * left * left
+}
+
+/// Slow to begin with and gathering pace, which is how things move when they
+/// are leaving rather than arriving.
+fn gathering(through: f32) -> f32 {
+    let through = through.clamp(0.0, 1.0);
+
+    through * through
+}
+
+/// Whether the icon theme has anything under this name.
+fn has_icon(name: &str) -> bool {
+    gdk::Display::default()
+        .map(|display| gtk4::IconTheme::for_display(&display))
+        .is_some_and(|theme| theme.has_icon(name))
 }
 
 /// Lays a label out as one line of the panel: left aligned, filling the
@@ -1036,15 +1299,14 @@ fn describes(text: &str) -> Option<Entry> {
     (!entry.name.is_empty()).then_some(entry)
 }
 
-/// The application's own icon, if the icon theme has one under a name the
-/// window class suggests.
-fn app_icon(app_id: &str, icon: Option<&str>) -> Option<gtk4::Image> {
-    let theme = gtk4::IconTheme::for_display(&gdk::Display::default()?);
+/// What the icon theme has for an application, under a name its desktop entry
+/// or its window class suggests.
+fn icon_named(app_id: &str, icon: Option<&str>) -> Option<String> {
     let last = app_id.rsplit('.').next().unwrap_or(app_id);
+
     // What the desktop entry names first: it knows, where the window class is
     // only a guess that happens to be right most of the time.
-    let candidates: Vec<String> = icon
-        .map(str::to_owned)
+    icon.map(str::to_owned)
         .into_iter()
         .chain([
             app_id.to_owned(),
@@ -1052,10 +1314,13 @@ fn app_icon(app_id: &str, icon: Option<&str>) -> Option<gtk4::Image> {
             last.to_owned(),
             last.to_lowercase(),
         ])
-        .collect();
+        .find(|name| has_icon(name))
+}
 
-    let name = candidates.iter().find(|name| theme.has_icon(name))?;
-    let icon = gtk4::Image::from_icon_name(name);
+/// The application's own icon, if the icon theme has one under a name the
+/// window class suggests.
+fn app_icon(app_id: &str, icon: Option<&str>) -> Option<gtk4::Image> {
+    let icon = gtk4::Image::from_icon_name(&icon_named(app_id, icon)?);
     icon.add_css_class("app-icon");
     icon.set_pixel_size(ICON_SIZE);
 
@@ -1180,4 +1445,61 @@ fn footer(keys: &config::Keys) -> gtk4::Box {
 /// A key as it reads on a keycap rather than in a configuration file.
 fn keycap_name(key: &config::Key) -> String {
     key.to_string().replace("Escape", "Esc")
+}
+
+#[cfg(test)]
+#[allow(clippy::cast_possible_truncation)]
+mod tests {
+    use super::{APPEARING, FAINT, LEAVING, LIFT, STARTING_SIZE, biggest, frame};
+
+    #[test]
+    fn the_icon_is_already_part_way_in_when_it_appears() {
+        let first = frame(0.0).expect("the animation has a first frame");
+
+        assert!((first.opacity - FAINT).abs() < f32::EPSILON);
+        assert_eq!(first.above, LIFT as i32);
+        assert!(first.size < STARTING_SIZE);
+    }
+
+    #[test]
+    fn it_arrives_where_it_settles() {
+        let arrived = frame(APPEARING).expect("the icon is still there once it lands");
+
+        assert!((arrived.opacity - 1.0).abs() < f32::EPSILON);
+        assert_eq!(arrived.above, 0);
+        assert_eq!(arrived.size, STARTING_SIZE);
+    }
+
+    /// The window is a layer surface with no anchors, so the compositor moves
+    /// it whenever it changes size. The drift and the growth both have to
+    /// happen inside the room kept for them, or the animation walks about.
+    #[test]
+    fn the_face_stays_the_same_size_throughout() {
+        let mut was = 0;
+
+        for step in 0..=100u8 {
+            let at = f32::from(step) * (APPEARING + LEAVING) / 100.0;
+            let Some(shape) = frame(at) else {
+                continue;
+            };
+
+            assert_eq!(shape.above + shape.below, LIFT as i32, "{at}ms in");
+            assert!(shape.size >= was, "{at}ms in: the icon shrank");
+            assert!(shape.size <= biggest(), "{at}ms in: the icon outgrew its room");
+            assert!((0.0..=1.0).contains(&shape.opacity), "{at}ms in");
+            was = shape.size;
+        }
+
+        assert!(was > STARTING_SIZE, "the icon stopped growing");
+    }
+
+    #[test]
+    fn it_fades_out_and_ends() {
+        let leaving = frame(APPEARING + LEAVING / 2.0).expect("still fading");
+
+        assert!(leaving.opacity > 0.0 && leaving.opacity < 1.0);
+        assert!(leaving.size > STARTING_SIZE, "it stopped growing as it left");
+        assert!(frame(APPEARING + LEAVING).is_none());
+        assert!(frame(f32::MAX).is_none());
+    }
 }

@@ -49,7 +49,11 @@ pub(crate) enum Effect {
     /// Focus the window the user settled on.
     Focus(Window),
     /// Launch an application that has no windows open.
-    Launch(String),
+    ///
+    /// The whole target, not just its command: what is shown while it starts
+    /// is its icon, and that is found from the window class rather than from
+    /// the command.
+    Launch(Target),
 }
 
 /// What pressing a mapped key did to a switch already in progress.
@@ -121,7 +125,7 @@ impl Controller {
             // instead — and that ends the switch.
             Retarget::NoWindows => {
                 let mut effects = self.end();
-                effects.push(Effect::Launch(target.app.clone()));
+                effects.push(Effect::Launch(target.clone()));
                 effects
             }
             // The selection moved, but there's nothing on screen to update.
@@ -141,7 +145,7 @@ impl Controller {
         let groups = switcher::group_windows(windows);
 
         let Some(group) = switcher::find_group(&groups, target.search()).map(str::to_owned) else {
-            return vec![Effect::Launch(target.app.clone())];
+            return vec![Effect::Launch(target.clone())];
         };
 
         self.sessions += 1;
@@ -412,7 +416,7 @@ mod tests {
 
         assert_eq!(
             controller.handle(trigger("spotify")),
-            [Effect::Launch("spotify".to_owned())]
+            [Effect::Launch(Target::new("spotify", None))]
         );
         assert_eq!(controller.handle(Event::Confirm), []);
     }
@@ -423,7 +427,7 @@ mod tests {
 
         assert_eq!(
             controller.handle(trigger("spotify")),
-            [Effect::Hide, Effect::Launch("spotify".to_owned())]
+            [Effect::Hide, Effect::Launch(Target::new("spotify", None))]
         );
         assert_eq!(controller.handle(Event::Confirm), []);
     }
