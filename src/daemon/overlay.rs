@@ -69,15 +69,6 @@ window.raisin > widget {
     padding: 2px 0;
 }
 
-/* One window of an application that isn't the one being switched to. The
-   thumbnail's frame is nearly black, which reads as a window showing
-   something; these show nothing, so they are a plain grey instead. */
-.pill {
-    border-radius: 4px;
-    border-color: alpha(#ffffff, 0.14);
-    background-color: alpha(#8f98ac, 0.20);
-}
-
 .marker {
     color: #c4cad8;
     font-size: 12px;
@@ -118,6 +109,15 @@ window.raisin > widget {
     background-color: alpha(#000000, 0.25);
 }
 
+/* One window of an application that isn't the one being switched to. The
+   thumbnail's frame is nearly black, which reads as a window showing
+   something; these show nothing, so they are a plain grey instead. */
+.pill {
+    border-radius: 4px;
+    border-color: alpha(#ffffff, 0.14);
+    background-color: alpha(#8f98ac, 0.20);
+}
+
 /* Stands in for a window the compositor wouldn't copy. Faint, so a tile that
    has its own picture never looks like one that hasn't. */
 .standin {
@@ -135,14 +135,6 @@ window.raisin > widget {
     font-size: 11px;
 }
 
-/* The keys in the footer say what raisin does rather than name a window, so
-   they wear the same grey as the markers rather than the panel's own. */
-.hint-key {
-    color: #c4cad8;
-    border-color: alpha(#ffffff, 0.14);
-    background-color: alpha(#8f98ac, 0.20);
-}
-
 .keycap {
     color: #b7bfd0;
     font-size: 11px;
@@ -151,6 +143,14 @@ window.raisin > widget {
     border: 1px solid alpha(#ffffff, 0.10);
     border-radius: 7px;
     background-color: alpha(#ffffff, 0.06);
+}
+
+/* The keys in the footer say what raisin does rather than name a window, so
+   they wear the same grey as the markers rather than the panel's own. */
+.hint-key {
+    color: #c4cad8;
+    border-color: alpha(#ffffff, 0.14);
+    background-color: alpha(#8f98ac, 0.20);
 }
 
 scrollbar {
