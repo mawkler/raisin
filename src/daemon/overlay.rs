@@ -124,6 +124,14 @@ window.raisin > widget {
     padding: 0 6px;
 }
 
+/* The line above them, which is there to say that what is below it is a
+   different kind of thing from what is above. */
+.between {
+    min-height: 1px;
+    margin: 10px 0 2px 0;
+    background-color: alpha(#ffffff, 0.09);
+}
+
 /* An application with nothing open: there to show its key, and no more. */
 .absent .group,
 .absent .keycap,
@@ -620,6 +628,15 @@ impl Overlay {
             // Without this the scroller asks for no width at all and clips
             // every name away.
             cut_off.set_hexpand(true);
+
+            // A line to say that the row below it is a different kind of
+            // thing: keys for what could be opened, rather than windows that
+            // are. There is nothing to separate it from if nothing is open.
+            if self.strip.first_child().is_some() {
+                let between = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+                between.add_css_class("between");
+                self.strip.append(&between);
+            }
 
             let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
             row.add_css_class("row");
