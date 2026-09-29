@@ -515,9 +515,8 @@ impl Overlay {
         // the same place however long the applications are called.
         let names = gtk4::SizeGroup::new(gtk4::SizeGroupMode::Horizontal);
 
-        // Gathered before anything is built, because rows are ordered by the
-        // name on screen rather than by the `app_id` they are keyed under:
-        // `Ghostty` and `com.mitchellh.ghostty` sort nothing alike.
+        // Gathered before anything is built, because the order the rows go in
+        // isn't the order they arrive in.
         let mut groups: Vec<(&str, String, Vec<&Window>)> = Vec::new();
 
         for row in session.rows() {
@@ -533,7 +532,14 @@ impl Overlay {
             }
         }
 
-        groups.sort_by_key(|(_, name, _)| name.to_lowercase());
+        // In the order of the keys that reach them, which is the order they
+        // are learned in. One with no key of its own can only be reached by
+        // walking, so it goes last.
+        groups.sort_by_key(|(app_id, ..)| {
+            let key = triggers.get(*app_id);
+
+            (key.is_none(), key.cloned().unwrap_or_default().to_lowercase())
+        });
 
         for (app_id, name, group) in &groups {
             // Only the application being switched to shows its windows in
@@ -617,7 +623,7 @@ impl Overlay {
                     )
                 })
                 .collect();
-            waiting.sort_by_key(|(name, _)| name.to_lowercase());
+            waiting.sort_by_key(|(_, application)| application.trigger.to_lowercase());
 
             let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 14);
 
