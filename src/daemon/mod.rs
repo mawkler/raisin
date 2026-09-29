@@ -225,7 +225,9 @@ impl Daemon {
 
     /// Asks for a thumbnail of every window on screen, the group being
     /// still blank first, then the group being switched to: captures are taken
-    /// in order and each one arrives on its own.
+    /// in order and each one arrives on its own. Every window is asked for,
+    /// not only the ones showing a thumbnail — a marker is coloured from its
+    /// own window, so it needs that window captured too.
     ///
     /// Asking for the blank ones first is what stops a window at the end of
     /// the strip from staying black for good. A batch is abandoned whenever
@@ -252,10 +254,8 @@ impl Daemon {
         for row in session.rows() {
             match row {
                 Row::Group { app_id, .. } => current = app_id == session.group(),
-                // Only the application being switched to shows its windows in
-                // full; every other row is markers, which need no capture.
                 Row::Window { window, .. } => {
-                    if !current || window.identifier.is_empty() {
+                    if window.identifier.is_empty() {
                         continue;
                     }
 
@@ -268,14 +268,15 @@ impl Daemon {
                         },
                     };
 
-                    requests.push((self.overlay.captured(&window.identifier), request));
+                    requests.push((self.overlay.captured(&window.identifier), !current, request));
                 }
             }
         }
 
-        // Stable, so windows keep the order the compositor gave them.
-        requests.sort_by_key(|(captured, _)| *captured);
-        let requests = requests.into_iter().map(|(_, request)| request).collect();
+        // Stable, so windows keep the order the compositor gave them within
+        // each of the four cases.
+        requests.sort_by_key(|(captured, untargeted, _)| (*captured, *untargeted));
+        let requests = requests.into_iter().map(|(.., request)| request).collect();
         drop(controller);
 
         // Captured at the size it will be shown at: a picture asks for as much

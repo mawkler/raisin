@@ -7,12 +7,16 @@
 //! row keeps its placeholder.
 
 mod capture;
+mod colour;
 
+use std::collections::HashMap;
 use std::thread;
 
 use async_channel::{Receiver, Sender};
 
 use capture::Capturer;
+use colour::Histogram;
+pub(crate) use colour::{Rgb, Tint};
 
 /// The shape a tile assumes a window has until it has been captured and the
 /// compositor won't say how big it is.
@@ -26,6 +30,9 @@ pub(crate) struct Thumbnail {
     pub(crate) height: u32,
     /// Bytes in the order GDK's `B8g8r8a8` premultiplied format wants them.
     pub(crate) pixels: Vec<u8>,
+    /// The two colours the window is mostly made of, when enough of it was
+    /// seen to say.
+    pub(crate) tint: Option<Tint>,
 }
 
 /// A window to capture, and what to call it if the capture goes wrong.
@@ -86,6 +93,9 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
         }
     };
 
+    // How many times in a row each window has refused to come back.
+    let mut stubborn: HashMap<String, u32> = HashMap::new();
+
     while let Ok(command) = commands.recv_blocking() {
         let Command::Capture { windows, width } = command else {
             continue;
@@ -108,13 +118,40 @@ fn run(commands: &Receiver<Command>, thumbnails: &Sender<Thumbnail>) {
         // already failed is still worth saying, though — the loop stops before
         // trying a window rather than after, so nothing here went unattempted.
         if !failed.is_empty() && commands.is_empty() {
-            let retrying = failed.into_iter().map(|(window, _)| window).collect();
+            // A window that has failed twice running isn't going to come back
+            // this time either. Trying it again costs the whole timeout, and
+            // every window still waiting behind it waits that much longer for
+            // a picture it would have got.
+            let (hopeless, retrying): (Vec<_>, Vec<_>) = failed
+                .into_iter()
+                .partition(|(window, _)| stubborn.get(&window.identifier).is_some_and(|n| *n >= 2));
+            let retrying = retrying.into_iter().map(|(window, _)| window).collect();
 
             failed = match capture(&mut capturer, retrying, width, thumbnails, commands) {
                 Ok(failed) => failed,
                 Err(Gone) => return,
             };
+
+            // Said once, when a window first stops coming back, and not again
+            // on every switch after that.
+            failed.retain(|(window, _)| {
+                !hopeless
+                    .iter()
+                    .any(|(gone, _)| gone.identifier == window.identifier)
+            });
         }
+
+        for (window, _) in &failed {
+            *stubborn.entry(window.identifier.clone()).or_insert(0) += 1;
+        }
+
+        // Anything that did come back starts again from nothing: a window that
+        // was off screen a moment ago may well be back.
+        stubborn.retain(|identifier, _| {
+            failed
+                .iter()
+                .any(|(window, _)| &window.identifier == identifier)
+        });
 
         complain(&failed);
     }
@@ -199,6 +236,10 @@ fn scale(
     let (thumbnail_width, thumbnail_height) = ((width / factor).max(1), (height / factor).max(1));
 
     let mut pixels = Vec::with_capacity((thumbnail_width * thumbnail_height * 4) as usize);
+    // Counted from the samples rather than from the thumbnail: averaging a
+    // block of pixels into one washes the colour out of it, and what a window
+    // is recognised by is exactly the colour that washing removes.
+    let mut histogram = Histogram::default();
 
     for row in 0..thumbnail_height {
         for column in 0..thumbnail_width {
@@ -218,6 +259,12 @@ fn scale(
 
                     if x >= width || at + 3 >= memory.len() {
                         break;
+                    }
+
+                    // A transparent pixel is stored premultiplied, so it
+                    // would vote for black if counted.
+                    if opaque || memory[at + 3] >= 128 {
+                        histogram.add(memory[at + 2], memory[at + 1], memory[at]);
                     }
 
                     blue += u32::from(memory[at]);
@@ -241,6 +288,7 @@ fn scale(
         width: thumbnail_width,
         height: thumbnail_height,
         pixels,
+        tint: histogram.tint(),
     }
 }
 

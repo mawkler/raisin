@@ -1,7 +1,7 @@
 //! The switcher window: a small dark panel, centred, above everything else.
 
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -11,7 +11,7 @@ use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
 
 use crate::compositor::Window;
 use crate::config;
-use crate::preview::{RATIO, Thumbnail};
+use crate::preview::{RATIO, Rgb, Thumbnail, Tint};
 use crate::switcher::{Row, Session};
 
 /// How big an application's icon is beside its name.
@@ -25,6 +25,14 @@ const NAME_WIDTH: i32 = 14;
 /// How tall the marker standing in for a window of an application that isn't
 /// the one being switched to is. Its width comes from the window.
 const PILL: i32 = 24;
+
+/// How strongly a window's own colours are laid over the panel.
+///
+/// The marker's title sits on top of them. At this much, even a window that is
+/// pure white composites to a background the title still reads against; since
+/// white is the worst case, this one number covers every colour and none of
+/// them need clamping to stay legible.
+const TINT: &str = "0.25";
 
 const STYLE: &str = "
 window.raisin,
@@ -186,6 +194,13 @@ pub(crate) struct Absent {
     pub(crate) trigger: String,
 }
 
+/// What a capture of a window leaves behind: the picture itself, and the two
+/// colours it is mostly made of.
+struct Capture {
+    texture: gdk::MemoryTexture,
+    tint: Option<Tint>,
+}
+
 /// A tile's thumbnail: the picture a capture goes into, and the icon shown in
 /// its place until one arrives — or for good, when none ever does.
 struct Thumbnailed {
@@ -225,7 +240,16 @@ pub(crate) struct Overlay {
     /// until the strip is rebuilt; keeping the texture as well is what lets a
     /// switcher open showing windows rather than empty boxes, until the
     /// captures for this session come in behind it.
-    textures: RefCell<HashMap<String, gdk::MemoryTexture>>,
+    captures: RefCell<HashMap<String, Capture>>,
+    /// Each marker on screen, so a capture arriving after the strip was built
+    /// can still colour the one it belongs to.
+    pills: RefCell<HashMap<String, gtk4::Box>>,
+    /// The gradients, in a sheet of their own: a colour taken from a window
+    /// can't be written in the stylesheet that ships with the program.
+    tints: gtk4::CssProvider,
+    /// Which of them that sheet currently holds, so it is only rewritten when
+    /// something new turns up.
+    rules: RefCell<BTreeSet<Tint>>,
     previews: Cell<config::Previews>,
     icons: Cell<bool>,
     /// What to call each application, by `app_id`, for the ones the user would
@@ -246,7 +270,7 @@ impl Overlay {
         previews: &config::Previews,
         names: &BTreeMap<String, String>,
     ) -> Result<Self> {
-        load_style().context("failed to load the switcher's stylesheet")?;
+        let tints = load_style().context("failed to load the switcher's stylesheet")?;
 
         let window = gtk4::Window::new();
         window.add_css_class("raisin");
@@ -319,7 +343,10 @@ impl Overlay {
             scroll,
             footer: RefCell::new(footer),
             thumbnails: RefCell::new(HashMap::new()),
-            textures: RefCell::new(HashMap::new()),
+            captures: RefCell::new(HashMap::new()),
+            pills: RefCell::new(HashMap::new()),
+            tints,
+            rules: RefCell::new(BTreeSet::new()),
             previews: Cell::new(*previews),
             icons: Cell::new(switcher.icons),
             names: RefCell::new(names.clone()),
@@ -347,7 +374,7 @@ impl Overlay {
         // A texture captured at the old width would be wider than the frame
         // asks for, and a picture takes the room its texture wants, so keeping
         // these would widen the tiles until fresh captures arrived.
-        self.textures.borrow_mut().clear();
+        self.captures.borrow_mut().clear();
 
         // The footer names the keys, so it's rebuilt rather than edited.
         let footer = footer(keys);
@@ -375,6 +402,7 @@ impl Overlay {
         self.selected.replace(None);
         self.tiles.borrow_mut().clear();
         self.thumbnails.borrow_mut().clear();
+        self.pills.borrow_mut().clear();
 
         let previews = self.previews.get();
 
@@ -420,7 +448,22 @@ impl Overlay {
                         &window.title
                     };
 
-                    windows.append(&pill(title, shape(window.size), previews.height));
+                    let pill = pill(title, shape(window.size), previews.height);
+
+                    if let Some(tint) = self
+                        .captures
+                        .borrow()
+                        .get(&window.identifier)
+                        .and_then(|capture| capture.tint)
+                    {
+                        self.rule(tint);
+                        pill.add_css_class(&class(tint));
+                    }
+
+                    windows.append(&pill);
+                    self.pills
+                        .borrow_mut()
+                        .insert(window.identifier.clone(), pill);
                 }
             }
 
@@ -513,7 +556,7 @@ impl Overlay {
             .map(|window| window.identifier.as_str())
             .collect();
 
-        self.textures
+        self.captures
             .borrow_mut()
             .retain(|identifier, _| open.contains(identifier.as_str()));
     }
@@ -555,8 +598,8 @@ impl Overlay {
         );
 
         if let Some(thumbnail) = thumbnail {
-            if let Some(texture) = self.textures.borrow().get(&window.identifier) {
-                thumbnail.show(texture);
+            if let Some(capture) = self.captures.borrow().get(&window.identifier) {
+                thumbnail.show(&capture.texture);
             }
 
             self.thumbnails
@@ -571,7 +614,7 @@ impl Overlay {
     /// Whether this window has been captured at some point, and so has
     /// something to show while a fresh capture is taken.
     pub(crate) fn captured(&self, identifier: &str) -> bool {
-        self.textures.borrow().contains_key(identifier)
+        self.captures.borrow().contains_key(identifier)
     }
 
     /// The desktop entry for an application, if one of them is plainly about
@@ -631,6 +674,8 @@ impl Overlay {
             return;
         }
 
+        self.tint(&thumbnail.identifier, thumbnail.tint);
+
         let width = thumbnail.width;
         let pixels = glib::Bytes::from_owned(thumbnail.pixels);
         let texture = gdk::MemoryTexture::new(
@@ -645,9 +690,53 @@ impl Overlay {
             thumbnailed.show(&texture);
         }
 
-        self.textures
-            .borrow_mut()
-            .insert(thumbnail.identifier, texture);
+        self.captures.borrow_mut().insert(
+            thumbnail.identifier,
+            Capture {
+                texture,
+                tint: thumbnail.tint,
+            },
+        );
+    }
+
+    /// Colours a window's marker, if it has one on screen.
+    ///
+    /// A capture can land at any time, including long after the strip it
+    /// belongs to was built, so the marker is found rather than passed in.
+    fn tint(&self, identifier: &str, tint: Option<Tint>) {
+        let Some(tint) = tint else {
+            return;
+        };
+        let Some(pill) = self.pills.borrow().get(identifier).cloned() else {
+            // No marker for it: the colour is still worth keeping, for the
+            // next time this window is one.
+            self.rule(tint);
+            return;
+        };
+
+        if let Some(worn) = self
+            .captures
+            .borrow()
+            .get(identifier)
+            .and_then(|capture| capture.tint)
+        {
+            pill.remove_css_class(&class(worn));
+        }
+
+        self.rule(tint);
+        pill.add_css_class(&class(tint));
+    }
+
+    /// Makes sure the sheet of gradients holds this one, rewriting it only if
+    /// it didn't.
+    fn rule(&self, tint: Tint) {
+        if !self.rules.borrow_mut().insert(tint) {
+            return;
+        }
+
+        let sheet: String = self.rules.borrow().iter().copied().map(rule).collect();
+
+        self.tints.load_from_string(&sheet);
     }
 
     /// Marks the window that a release of Super would focus, scrolling it
@@ -696,18 +785,58 @@ fn screen() -> (i32, i32) {
     })
 }
 
-fn load_style() -> Result<()> {
+/// What a marker wearing this pair of colours is called.
+///
+/// Named after the colours themselves rather than numbered, so a class that
+/// outlives the sheet it was written for is still the right class, and two
+/// windows that happen to look alike share one rule.
+fn class(Tint(from, to): Tint) -> String {
+    format!(
+        "tint-{:02x}{:02x}{:02x}-{:02x}{:02x}{:02x}",
+        from.red, from.green, from.blue, to.red, to.green, to.blue
+    )
+}
+
+/// The gradient itself.
+///
+/// Two classes deep, so it wins against `.pill` and `.thumbnail` whatever
+/// order those are written in. The colours are laid over the panel faintly:
+/// the marker's own title sits on top of them and has to stay readable, and a
+/// marker still shouldn't read as a window that's showing something.
+fn rule(tint: Tint) -> String {
+    let Tint(from, to) = tint;
+    let colour = |Rgb { red, green, blue }: Rgb| format!("rgba({red},{green},{blue},{TINT})");
+
+    format!(
+        ".pill.{} {{ background-color: transparent; \
+         background-image: linear-gradient(to right, {}, {}); }}\n",
+        class(tint),
+        colour(from),
+        colour(to),
+    )
+}
+
+/// Installs the stylesheet, and a second, empty one for the gradients taken
+/// from windows.
+///
+/// The second is registered once and rewritten in place from then on: adding
+/// a provider per switch would pile them up for as long as the daemon runs.
+fn load_style() -> Result<gtk4::CssProvider> {
     let display = gdk::Display::default().context("no display to draw on")?;
     let style = gtk4::CssProvider::new();
     style.load_from_string(STYLE);
 
-    gtk4::style_context_add_provider_for_display(
-        &display,
-        &style,
-        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    let tints = gtk4::CssProvider::new();
 
-    Ok(())
+    for provider in [&style, &tints] {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+
+    Ok(tints)
 }
 
 /// Lays a label out as one line of the panel: left aligned, filling the
