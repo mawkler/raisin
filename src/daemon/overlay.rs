@@ -132,10 +132,13 @@ window.raisin > widget {
     background-color: alpha(#ffffff, 0.09);
 }
 
-/* An application with nothing open: there to show its key, and no more. */
+/* An application with nothing open, there to show its key and no more; and
+   the hints, which say the same thing every time. Both are worth a glance
+   and neither is worth the eye that the windows themselves are worth. */
 .absent .group,
 .absent .keycap,
-.absent .app-icon {
+.absent .app-icon,
+.footer {
     opacity: 0.4;
 }
 
@@ -181,14 +184,15 @@ window.raisin > widget {
     opacity: 0.35;
 }
 
+/* Held off the heading beside it, and level with it. */
 .footer {
-    padding: 16px 4px 0 4px;
+    padding: 0 0 0 14px;
 }
 
-/* What each key does. Level with the key beside it, so it needs no padding
-   of its own. */
+/* What each key does, in the grey the names of the applications with nothing
+   open wear, so that the two rows of keys read alike. */
 .hint {
-    color: #6e7688;
+    color: #78819a;
     font-size: 11px;
 }
 
@@ -200,14 +204,6 @@ window.raisin > widget {
     border: 1px solid alpha(#ffffff, 0.10);
     border-radius: 7px;
     background-color: alpha(#ffffff, 0.06);
-}
-
-/* The keys in the footer say what raisin does rather than name a window, so
-   they wear the same grey as the markers rather than the panel's own. */
-.hint-key {
-    color: #c4cad8;
-    border-color: alpha(#ffffff, 0.14);
-    background-color: alpha(#8f98ac, 0.20);
 }
 
 scrollbar {
@@ -280,6 +276,9 @@ pub(crate) struct Overlay {
     tiles: RefCell<HashMap<String, gtk4::Box>>,
     selected: RefCell<Option<gtk4::Box>>,
     panel: gtk4::Box,
+    /// The line the heading and the key hints share, kept so that the hints
+    /// can be built again when the keys they name change.
+    title: gtk4::Box,
     /// The switcher and the just-started icon, one of which the window shows.
     faces: gtk4::Stack,
     /// The face that says an application is starting, and the icon on it.
@@ -291,6 +290,9 @@ pub(crate) struct Overlay {
     playing: Rc<RefCell<Option<Playing>>>,
     scroll: gtk4::ScrolledWindow,
     footer: RefCell<gtk4::Box>,
+    /// The hints among them that name the key of whatever is being switched
+    /// to, which changes with every switch.
+    cycling: RefCell<Cycling>,
     /// Where each window's thumbnail goes once it has been captured, by the
     /// identifier the capture comes back with.
     thumbnails: RefCell<HashMap<String, Thumbnailed>>,
@@ -354,10 +356,16 @@ impl Overlay {
         subject.add_css_class("subject");
         line(&subject);
 
+        // What the keys do, at the end of the line the heading is on: it is
+        // nearly the same every time, so it belongs where the eye passes over
+        // it rather than on a line of its own.
+        let (footer, cycling) = footer(keys);
+
         let title = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         title.add_css_class("title-bar");
         title.append(&heading);
         title.append(&subject);
+        title.append(&footer);
 
         let strip = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
 
@@ -373,13 +381,10 @@ impl Overlay {
         scroll.set_size_request(switcher.width.pixels(screen_width), -1);
         scroll.set_max_content_height(switcher.max_height.pixels(screen_height));
 
-        let footer = footer(keys);
-
         let panel = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         panel.add_css_class("panel");
         panel.append(&title);
         panel.append(&scroll);
-        panel.append(&footer);
 
         // The window shows one of two things: the switcher, or the icon of an
         // application that was just started. Swapping which keeps the one
@@ -426,6 +431,7 @@ impl Overlay {
             window,
             heading,
             subject,
+            title,
             strip,
             tiles: RefCell::new(HashMap::new()),
             selected: RefCell::new(None),
@@ -436,6 +442,7 @@ impl Overlay {
             playing: Rc::new(RefCell::new(None)),
             scroll,
             footer: RefCell::new(footer),
+            cycling: RefCell::new(cycling),
             thumbnails: RefCell::new(HashMap::new()),
             captures: RefCell::new(HashMap::new()),
             pills: RefCell::new(HashMap::new()),
@@ -471,10 +478,11 @@ impl Overlay {
         self.captures.borrow_mut().clear();
 
         // The footer names the keys, so it's rebuilt rather than edited.
-        let footer = footer(keys);
-        self.panel.remove(&*self.footer.borrow());
-        self.panel.append(&footer);
+        let (footer, cycling) = footer(keys);
+        self.title.remove(&*self.footer.borrow());
+        self.title.append(&footer);
         self.footer.replace(footer);
+        self.cycling.replace(cycling);
     }
 
     /// Lays out every open window, its application's key beside the
@@ -489,6 +497,9 @@ impl Overlay {
         absent: &[Absent],
     ) {
         self.set_heading(session);
+        self.cycling
+            .borrow()
+            .on(triggers.get(session.group()).map(String::as_str));
 
         while let Some(block) = self.strip.first_child() {
             self.strip.remove(&block);
@@ -1119,12 +1130,16 @@ fn has_icon(name: &str) -> bool {
         .is_some_and(|theme| theme.has_icon(name))
 }
 
-/// Lays a label out as one line of the panel: left aligned, filling the
-/// width, and cut short with an ellipsis rather than shrinking to fit.
+/// Lays a label out as one line of the panel: left aligned, taking the room
+/// that is left over, and cut short with an ellipsis when there isn't enough.
 fn line(label: &gtk4::Label) {
     label.set_hexpand(true);
     label.set_xalign(0.0);
     label.set_ellipsize(pango::EllipsizeMode::End);
+    // Enough of a hint for the label to give way to the panel's width rather
+    // than the other way round: without it a long window title asks for room
+    // for the whole of itself, and the panel widens to give it.
+    label.set_max_width_chars(1);
 }
 
 /// The marker standing in for a window of an application that isn't the one
@@ -1422,41 +1437,83 @@ fn shape(size: Option<(u32, u32)>) -> f32 {
     }
 }
 
-fn footer(keys: &config::Keys) -> gtk4::Box {
-    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 7);
+/// What the keys do, and the two hints among them that name the key the switch
+/// is on.
+fn footer(keys: &config::Keys) -> (gtk4::Box, Cycling) {
+    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     footer.add_css_class("footer");
-    // Off to the right, where it stays out of the way of the names running
-    // down the left.
-    footer.set_halign(gtk4::Align::End);
+    // The window title beside it takes the room that is left, which leaves
+    // this at the end of the line and takes the title short when there isn't
+    // room for both.
+    footer.set_valign(gtk4::Align::Center);
 
     let keycap = |key: &str| {
         let label = gtk4::Label::new(Some(key));
         label.add_css_class("keycap");
-        label.add_css_class("hint-key");
         label
     };
-    let hint = |text: &str| {
-        let label = gtk4::Label::new(Some(text));
-        // Its own class, not the footer's: the footer's padding is what holds
-        // the whole row clear of the strip above it, and on a label it would
-        // pad the text itself downwards instead.
-        label.add_css_class("hint");
-        label.set_valign(gtk4::Align::Center);
-        label
+    let hint = |caps: &[&gtk4::Label], text: &str| {
+        let says = gtk4::Label::new(Some(text));
+        says.add_css_class("hint");
+        says.set_valign(gtk4::Align::Center);
+
+        let hint = gtk4::Box::new(gtk4::Orientation::Horizontal, 5);
+        for cap in caps {
+            hint.append(*cap);
+        }
+        hint.append(&says);
+
+        hint
     };
 
-    footer.append(&keycap("Super"));
-    footer.append(&hint("release to switch"));
+    // The application's own key walks its windows, and Shift with it walks
+    // them the other way. Which key that is belongs to the switch rather than
+    // to the configuration, so it is filled in when there is one.
+    let forwards = keycap("");
+    let backwards = keycap("");
+    let cycling = Cycling {
+        hints: vec![
+            hint(&[&forwards], "next window"),
+            hint(&[&keycap("Shift"), &backwards], "previous window"),
+        ],
+        keys: vec![forwards, backwards],
+    };
 
-    if let Some(next) = &keys.next {
-        footer.append(&keycap(&keycap_name(next)));
-        footer.append(&hint("next"));
+    for hint in &cycling.hints {
+        // There is nothing to name until a switch says which key it is on.
+        hint.set_visible(false);
+        footer.append(hint);
     }
 
-    footer.append(&keycap(&keycap_name(&keys.cancel)));
-    footer.append(&hint("cancel"));
+    footer.append(&hint(&[&keycap(&keycap_name(&keys.cancel))], "cancel"));
 
-    footer
+    (footer, cycling)
+}
+
+/// The hints that name the key the switch is on.
+///
+/// They are the only part of the panel that says something about the switch
+/// rather than about the configuration, so they are kept to be told what to
+/// say each time one begins.
+struct Cycling {
+    hints: Vec<gtk4::Box>,
+    keys: Vec<gtk4::Label>,
+}
+
+impl Cycling {
+    /// Names the key the switch is on, or takes the hints off the line for an
+    /// application that has none.
+    fn on(&self, trigger: Option<&str>) {
+        for hint in &self.hints {
+            hint.set_visible(trigger.is_some());
+        }
+
+        if let Some(trigger) = trigger {
+            for key in &self.keys {
+                key.set_label(trigger);
+            }
+        }
+    }
 }
 
 /// A key as it reads on a keycap rather than in a configuration file.
