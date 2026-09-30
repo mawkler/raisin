@@ -69,11 +69,12 @@ const FALLBACK_ICON: &str = "application-x-executable";
 
 /// How strongly a window's own colours are laid over the panel.
 ///
-/// The marker's title sits on top of them. At this much, even a window that is
-/// pure white composites to a background the title still reads against; since
-/// white is the worst case, this one number covers every colour and none of
-/// them need clamping to stay legible.
-const TINT: &str = "0.25";
+/// The marker's title sits on top of them, so how much of a window's colour
+/// can be shown depends on how light that colour is allowed to be. They are
+/// held under a ceiling before they arrive, which leaves the title a contrast
+/// of 4.5 against the palest window there can be — and room to show this much
+/// of every other one.
+const TINT: &str = "0.35";
 
 const STYLE: &str = "
 window.raisin,

@@ -31,7 +31,12 @@ const APART: f32 = 0.15;
 
 /// How dark a colour is allowed to end up. A window that is nearly black is
 /// still shown as a tint of its own rather than as a hole in the panel.
-const FLOOR: f32 = 0.55;
+const FLOOR: f32 = 0.62;
+
+/// And how light. The marker's title sits over the colour, and a window that
+/// is nearly white would leave it nothing to read against. Holding the palest
+/// windows down here is what makes it safe to show more of all the others.
+const CEILING: f32 = 0.82;
 
 /// A colour, as the sRGB bytes it will be written back out as.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -120,7 +125,7 @@ impl Histogram {
         // A window with only one colour in it gets a gradient between that
         // colour and itself, which is the honest way to draw it.
         let second = self.pick(&candidates, far).unwrap_or(first);
-        let (first, second) = (lighten(first.lab), lighten(second.lab));
+        let (first, second) = (banded(first.lab), banded(second.lab));
 
         Some(if first.l <= second.l {
             Tint(rgb(first), rgb(second))
@@ -224,10 +229,11 @@ fn step(at: usize, by: i32) -> Option<usize> {
     (0..STEPS as i32).contains(&moved).then_some(moved as usize)
 }
 
-/// Lifts a colour to the floor without changing what colour it is.
-fn lighten(colour: Oklab) -> Oklab {
+/// Brings a colour into the band the markers are drawn in, without changing
+/// what colour it is.
+fn banded(colour: Oklab) -> Oklab {
     Oklab {
-        l: colour.l.max(FLOOR),
+        l: colour.l.clamp(FLOOR, CEILING),
         ..colour
     }
 }
@@ -365,6 +371,18 @@ mod tests {
         // Dark enough to be nearly invisible on the panel if left alone.
         assert!(first.red > 40, "{first:?}");
         assert_eq!(first, second, "one colour means a flat fill");
+    }
+
+    #[test]
+    fn a_pale_window_is_held_under_the_ceiling() {
+        let mut histogram = Histogram::default();
+        fill(&mut histogram, (252, 251, 248), 1000);
+
+        let Tint(first, _) = histogram.tint().expect("a colour");
+
+        // Light enough to leave the title nothing to read against if left
+        // alone.
+        assert!(first.red < 230, "{first:?}");
     }
 
     #[test]
