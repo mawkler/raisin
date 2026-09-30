@@ -22,6 +22,24 @@ pub(crate) use colour::{Rgb, Tint};
 /// compositor won't say how big it is.
 pub(crate) const RATIO: f32 = 1.6;
 
+/// The two colours a rectangle of pixels is mostly made of.
+///
+/// The pixels are as both the compositor and GTK hand them over: four bytes
+/// each, blue first, with the colour already multiplied by the alpha.
+pub(crate) fn colours(memory: &[u8]) -> Option<Tint> {
+    let mut histogram = Histogram::default();
+
+    for pixel in memory.chunks_exact(4) {
+        // A transparent pixel is stored premultiplied, so it would vote for
+        // black if counted.
+        if pixel[3] >= 128 {
+            histogram.add(pixel[2], pixel[1], pixel[0]);
+        }
+    }
+
+    histogram.tint()
+}
+
 /// A window's contents, small enough to sit in a list.
 pub(crate) struct Thumbnail {
     /// The window it belongs to, as the compositor identifies it.

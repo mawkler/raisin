@@ -13,7 +13,7 @@ use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
 
 use crate::compositor::Window;
 use crate::config;
-use crate::preview::{RATIO, Rgb, Thumbnail, Tint};
+use crate::preview::{self, RATIO, Rgb, Thumbnail, Tint};
 use crate::switcher::{Row, Session};
 
 /// How big an application's icon is beside its name.
@@ -27,6 +27,11 @@ const NAME_WIDTH: i32 = 14;
 /// How tall the marker standing in for a window of an application that isn't
 /// the one being switched to is. Its width comes from the window.
 const PILL: i32 = 24;
+
+/// How big an application's icon is drawn when it is being read for its
+/// colours rather than looked at. Big enough for the colours it is mostly
+/// made of to be the colours it looks like.
+const SAMPLE: i32 = 48;
 
 /// How big the icon of an application that was just started is drawn at the
 /// moment it is most solid.
@@ -311,6 +316,10 @@ pub(crate) struct Overlay {
     /// Which of them that sheet currently holds, so it is only rewritten when
     /// something new turns up.
     rules: RefCell<BTreeSet<Tint>>,
+    /// What each application's icon is made of, by `app_id`, for the windows
+    /// the compositor won't give a picture of. Kept because an icon doesn't
+    /// change while the daemon runs, and `None` is worth keeping too.
+    palettes: RefCell<HashMap<String, Option<Tint>>>,
     previews: Cell<config::Previews>,
     icons: Cell<bool>,
     /// What to call each application, by `app_id`, for the ones the user would
@@ -449,6 +458,7 @@ impl Overlay {
             pills: RefCell::new(HashMap::new()),
             tints,
             rules: RefCell::new(BTreeSet::new()),
+            palettes: RefCell::new(HashMap::new()),
             previews: Cell::new(*previews),
             icons: Cell::new(switcher.icons),
             names: RefCell::new(names.clone()),
@@ -562,14 +572,18 @@ impl Overlay {
 
                     let pill = pill(title, shape(window.size), previews.height);
 
-                    if let Some(tint) = self
+                    let captured = self
                         .captures
                         .borrow()
                         .get(&window.identifier)
-                        .and_then(|capture| capture.tint)
-                    {
+                        .and_then(|capture| capture.tint);
+
+                    // A window the compositor won't copy still belongs to an
+                    // application, and that has an icon: its colours are the
+                    // ones the window would be recognised by anyway.
+                    if let Some(tint) = captured.or_else(|| self.palette(app_id)) {
                         self.rule(tint);
-                        pill.add_css_class(&class(tint));
+                        wear(&pill, tint);
                     }
 
                     windows.append(&pill);
@@ -828,24 +842,62 @@ impl Overlay {
         let Some(tint) = tint else {
             return;
         };
-        let Some(pill) = self.pills.borrow().get(identifier).cloned() else {
-            // No marker for it: the colour is still worth keeping, for the
-            // next time this window is one.
-            self.rule(tint);
-            return;
-        };
 
-        if let Some(worn) = self
-            .captures
-            .borrow()
-            .get(identifier)
-            .and_then(|capture| capture.tint)
-        {
-            pill.remove_css_class(&class(worn));
+        // Worth keeping even with no marker to put it on, for the next time
+        // this window has one.
+        self.rule(tint);
+
+        if let Some(pill) = self.pills.borrow().get(identifier) {
+            wear(pill, tint);
+        }
+    }
+
+    /// What an application's icon is mostly made of.
+    fn palette(&self, app_id: &str) -> Option<Tint> {
+        if let Some(known) = self.palettes.borrow().get(app_id) {
+            return *known;
         }
 
-        self.rule(tint);
-        pill.add_css_class(&class(tint));
+        let palette = icon_named(app_id, self.icon_name(app_id).as_deref())
+            .and_then(|name| self.drawn(&name))
+            .and_then(|memory| preview::colours(&memory));
+
+        self.palettes.borrow_mut().insert(app_id.to_owned(), palette);
+
+        palette
+    }
+
+    /// Draws an icon into memory, four bytes to a pixel.
+    ///
+    /// The window's own renderer does the drawing, which is the only way to
+    /// see what an icon is made of: the theme answers with something that
+    /// knows how to draw itself rather than with any pixels.
+    fn drawn(&self, name: &str) -> Option<Vec<u8>> {
+        let theme = gtk4::IconTheme::for_display(&gdk::Display::default()?);
+        let icon = theme.lookup_icon(
+            name,
+            &[],
+            SAMPLE,
+            1,
+            gtk4::TextDirection::None,
+            gtk4::IconLookupFlags::empty(),
+        );
+
+        let snapshot = gtk4::Snapshot::new();
+        icon.snapshot(&snapshot, f64::from(SAMPLE), f64::from(SAMPLE));
+
+        let texture = self
+            .window
+            .native()?
+            .renderer()?
+            .render_texture(&snapshot.to_node()?, None);
+
+        #[allow(clippy::cast_sign_loss)]
+        let (width, height) = (texture.width() as usize, texture.height() as usize);
+        let mut memory = vec![0; width * height * 4];
+        texture.download(&mut memory, width * 4);
+
+        Some(memory)
     }
 
     /// Makes sure the sheet of gradients holds this one, rewriting it only if
@@ -1521,6 +1573,17 @@ impl Cycling {
             }
         }
     }
+}
+
+/// Puts a gradient on a marker, taking off whichever one it was wearing.
+fn wear(pill: &gtk4::Box, tint: Tint) {
+    for worn in pill.css_classes() {
+        if worn.starts_with("tint-") {
+            pill.remove_css_class(&worn);
+        }
+    }
+
+    pill.add_css_class(&class(tint));
 }
 
 /// A key as it reads on a keycap rather than in a configuration file.
