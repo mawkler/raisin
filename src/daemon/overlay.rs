@@ -1511,15 +1511,13 @@ fn footer(keys: &config::Keys) -> (gtk4::Box, Cycling) {
         label.add_css_class("keycap");
         label
     };
-    let hint = |caps: &[&gtk4::Label], text: &str| {
+    let hint = |cap: &gtk4::Label, text: &str| {
         let says = gtk4::Label::new(Some(text));
         says.add_css_class("hint");
         says.set_valign(gtk4::Align::Center);
 
         let hint = gtk4::Box::new(gtk4::Orientation::Horizontal, 5);
-        for cap in caps {
-            hint.append(*cap);
-        }
+        hint.append(cap);
         hint.append(&says);
 
         hint
@@ -1527,15 +1525,16 @@ fn footer(keys: &config::Keys) -> (gtk4::Box, Cycling) {
 
     // The application's own key walks its windows, and Shift with it walks
     // them the other way. Which key that is belongs to the switch rather than
-    // to the configuration, so it is filled in when there is one.
+    // to the configuration, so both are filled in when there is one.
+    //
+    // Shift and the key share one keycap rather than wearing one each: they
+    // are one thing to press, and drawn as one nothing has to say so.
     let forwards = keycap("");
     let backwards = keycap("");
     let cycling = Cycling {
-        hints: vec![
-            hint(&[&forwards], "next window"),
-            hint(&[&keycap("Shift"), &backwards], "previous window"),
-        ],
-        keys: vec![forwards, backwards],
+        hints: vec![hint(&forwards, "next"), hint(&backwards, "previous")],
+        forwards,
+        backwards,
     };
 
     for hint in &cycling.hints {
@@ -1544,7 +1543,7 @@ fn footer(keys: &config::Keys) -> (gtk4::Box, Cycling) {
         footer.append(hint);
     }
 
-    footer.append(&hint(&[&keycap(&keycap_name(&keys.cancel))], "cancel"));
+    footer.append(&hint(&keycap(&keycap_name(&keys.cancel)), "cancel"));
 
     (footer, cycling)
 }
@@ -1556,7 +1555,8 @@ fn footer(keys: &config::Keys) -> (gtk4::Box, Cycling) {
 /// say each time one begins.
 struct Cycling {
     hints: Vec<gtk4::Box>,
-    keys: Vec<gtk4::Label>,
+    forwards: gtk4::Label,
+    backwards: gtk4::Label,
 }
 
 impl Cycling {
@@ -1568,9 +1568,8 @@ impl Cycling {
         }
 
         if let Some(trigger) = trigger {
-            for key in &self.keys {
-                key.set_label(trigger);
-            }
+            self.forwards.set_label(trigger);
+            self.backwards.set_label(&format!("Shift + {trigger}"));
         }
     }
 }
