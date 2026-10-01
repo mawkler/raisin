@@ -28,6 +28,15 @@ const NAME_WIDTH: i32 = 14;
 /// the one being switched to is. Its width comes from the window.
 const PILL: i32 = 24;
 
+/// How long a handover takes: one application's row folding shut while
+/// another's folds open, on the curve the compositor animates its own windows
+/// and layers with.
+const FOLD: f32 = 170.0;
+
+/// And how long after that the rows are put back to how they rest, whether or
+/// not the frames got that far.
+const FOLDED: Duration = Duration::from_millis(230);
+
 /// How big an application's icon is drawn when it is being read for its
 /// colours rather than looked at. Big enough for the colours it is mostly
 /// made of to be the colours it looks like.
@@ -316,6 +325,14 @@ pub(crate) struct Overlay {
     /// Which of them that sheet currently holds, so it is only rewritten when
     /// something new turns up.
     rules: RefCell<BTreeSet<Tint>>,
+    /// Which application the strip was last built for, so that building it
+    /// again can tell a switch from a first showing.
+    showing: RefCell<Option<String>>,
+    /// A handover in progress, kept so that a switch arriving in the middle of
+    /// one can call it off — and cleared by the handover itself when it ends,
+    /// so that what is kept is only ever a timer that has yet to fire.
+    /// Removing one that already has is an error, not a no-op.
+    folding: Rc<RefCell<Option<Folding>>>,
     /// What each application's icon is made of, by `app_id`, for the windows
     /// the compositor won't give a picture of. Kept because an icon doesn't
     /// change while the daemon runs, and `None` is worth keeping too.
@@ -458,6 +475,8 @@ impl Overlay {
             pills: RefCell::new(HashMap::new()),
             tints,
             rules: RefCell::new(BTreeSet::new()),
+            showing: RefCell::new(None),
+            folding: Rc::new(RefCell::new(None)),
             palettes: RefCell::new(HashMap::new()),
             previews: Cell::new(*previews),
             icons: Cell::new(switcher.icons),
@@ -512,6 +531,20 @@ impl Overlay {
             .borrow()
             .on(triggers.get(session.group()).map(String::as_str));
 
+        let previews = self.previews.get();
+
+        // A switch made while the panel is up hands it from one application to
+        // another, which is worth watching rather than blinking: the row being
+        // left folds shut as the row arrived at folds open. There is nothing
+        // to hand over on the first fill of a switch, when the window is still
+        // off screen, or when there are no thumbnails to fold away.
+        self.unfold();
+        let handover = self
+            .showing
+            .replace(Some(session.group().to_owned()))
+            .filter(|showing| showing != session.group())
+            .filter(|_| self.window.is_visible() && previews.enabled);
+
         while let Some(block) = self.strip.first_child() {
             self.strip.remove(&block);
         }
@@ -519,8 +552,6 @@ impl Overlay {
         self.tiles.borrow_mut().clear();
         self.thumbnails.borrow_mut().clear();
         self.pills.borrow_mut().clear();
-
-        let previews = self.previews.get();
 
         // Every row's name takes the same width, so the windows all start in
         // the same place however long the applications are called.
@@ -552,46 +583,41 @@ impl Overlay {
             (key.is_none(), key.cloned().unwrap_or_default().to_lowercase())
         });
 
+        let mut handing: Vec<Morph> = Vec::new();
+
         for (app_id, name, group) in &groups {
             // Only the application being switched to shows its windows in
             // full. Every other window is one marker, the shape of the window
             // it stands for, so the row is a line tall.
             let targeted = *app_id == session.group();
-            let windows =
-                gtk4::Box::new(gtk4::Orientation::Horizontal, if targeted { 8 } else { 5 });
+            // The two rows a switch hands the panel between carry both faces,
+            // and are shown the one they are coming from: a fold is a row
+            // changing which of the two it is, which it can only do if it has
+            // both.
+            let folding = handover.as_deref() == Some(*app_id);
 
-            for window in group {
-                if targeted {
-                    self.append_tile(&windows, window, previews);
+            let moving = (handover.is_some() && (targeted || folding)).then(|| {
+                // What it moves through, and what it settles into: the first
+                // is one widget per window that changes height, the second is
+                // built by the same code as every other row, so that what the
+                // movement leaves behind is an ordinary one.
+                let (face, morphing) = self.morph_face(app_id, group, previews);
+                let settled: gtk4::Widget = if targeted {
+                    self.open_face(group, previews).upcast()
                 } else {
-                    let title = if window.title.is_empty() {
-                        &window.app_id
-                    } else {
-                        &window.title
-                    };
+                    self.shut_face(app_id, group, previews).upcast()
+                };
 
-                    let pill = pill(title, shape(window.size), previews.height);
+                (face, morphing, settled)
+            });
 
-                    let captured = self
-                        .captures
-                        .borrow()
-                        .get(&window.identifier)
-                        .and_then(|capture| capture.tint);
-
-                    // A window the compositor won't copy still belongs to an
-                    // application, and that has an icon: its colours are the
-                    // ones the window would be recognised by anyway.
-                    if let Some(tint) = captured.or_else(|| self.palette(app_id)) {
-                        self.rule(tint);
-                        wear(&pill, tint);
-                    }
-
-                    windows.append(&pill);
-                    self.pills
-                        .borrow_mut()
-                        .insert(window.identifier.clone(), pill);
-                }
-            }
+            let windows: gtk4::Widget = if let Some((face, ..)) = &moving {
+                face.clone().upcast()
+            } else if targeted {
+                self.open_face(group, previews).upcast()
+            } else {
+                self.shut_face(app_id, group, previews).upcast()
+            };
 
             // A row of windows scrolls sideways on its own when there are more
             // of them than the panel is wide.
@@ -600,6 +626,35 @@ impl Overlay {
             sideways.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
             sideways.set_propagate_natural_height(true);
             sideways.set_hexpand(true);
+
+            if let Some((face, morphing, settled)) = moving {
+                #[allow(clippy::cast_possible_truncation)]
+                let tall = previews.height as i32;
+
+                // How tall the row stands when it is open, asked of the face
+                // itself rather than added up: it holds a title as well.
+                for one in &morphing {
+                    one.frame.set_size_request(one.width, tall);
+                }
+                let open = face.measure(gtk4::Orientation::Vertical, -1).1;
+
+                // A row that says its size follows its contents can never be
+                // shorter than they are, and the whole movement is the row
+                // being shorter than they are.
+                sideways.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::External);
+
+                let morph = Morph {
+                    sideways: sideways.clone(),
+                    settled,
+                    windows: morphing,
+                    open,
+                    tall,
+                    opening: targeted,
+                };
+
+                morph.draw(0.0);
+                handing.push(morph);
+            }
 
             // The icon is still looked up by `app_id`: it is what the desktop
             // entry is named after, not what the window calls itself.
@@ -678,6 +733,8 @@ impl Overlay {
             self.strip.append(&row);
         }
 
+        self.fold(handing);
+
         // Windows that have since closed would otherwise be remembered for as
         // long as the daemon runs.
         //
@@ -709,6 +766,164 @@ impl Overlay {
 
         self.heading.set_text(&format!("Switch to {name}"));
         self.subject.set_text(title);
+    }
+
+    /// An application's windows as thumbnails, which is how the one being
+    /// switched to is shown.
+    fn open_face(&self, group: &[&Window], previews: config::Previews) -> gtk4::Box {
+        let windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+        for window in group {
+            self.append_tile(&windows, window, previews);
+        }
+
+        windows
+    }
+
+    /// The same windows as markers, each the shape of the window it stands
+    /// for, which is how every other application is shown: a line tall.
+    fn shut_face(
+        &self,
+        app_id: &str,
+        group: &[&Window],
+        previews: config::Previews,
+    ) -> gtk4::Box {
+        let windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 5);
+
+        for window in group {
+            let title = if window.title.is_empty() {
+                &window.app_id
+            } else {
+                &window.title
+            };
+
+            let pill = pill(title, shape(window.size), previews.height);
+
+            let captured = self
+                .captures
+                .borrow()
+                .get(&window.identifier)
+                .and_then(|capture| capture.tint);
+
+            // A window the compositor won't copy still belongs to an
+            // application, and that has an icon: its colours are the ones the
+            // window would be recognised by anyway.
+            if let Some(tint) = captured.or_else(|| self.palette(app_id)) {
+                self.rule(tint);
+                wear(&pill, tint);
+            }
+
+            windows.append(&pill);
+            self.pills
+                .borrow_mut()
+                .insert(window.identifier.clone(), pill);
+        }
+
+        windows
+    }
+
+    /// The windows of a row that is folding or opening, each as one widget
+    /// that is a marker at one end of the movement and a thumbnail at the
+    /// other.
+    fn morph_face(
+        &self,
+        app_id: &str,
+        group: &[&Window],
+        previews: config::Previews,
+    ) -> (gtk4::Box, Vec<Morphing>) {
+        let windows = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        let mut moving = Vec::new();
+
+        for window in group {
+            let title = if window.title.is_empty() {
+                &window.app_id
+            } else {
+                &window.title
+            };
+
+            let capture = self.captures.borrow().get(&window.identifier).map(
+                |Capture { texture, tint }| (texture.clone(), *tint),
+            );
+            let (texture, captured) = match &capture {
+                Some((texture, tint)) => (Some(texture), *tint),
+                None => (None, None),
+            };
+
+            let one = morphing(title, shape(window.size), previews.height, texture);
+
+            if let Some(tint) = captured.or_else(|| self.palette(app_id)) {
+                self.rule(tint);
+                wear(&one.frame, tint);
+            }
+
+            windows.append(&one.tile);
+            moving.push(one);
+        }
+
+        (windows, moving)
+    }
+
+    /// Hands the panel from one application's row to another's, once both have
+    /// been drawn the way they were before the switch.
+    ///
+    /// A stack animates when the child it shows changes, and a stack built and
+    /// pointed at a child in the same breath has nothing to change from — so
+    /// the fold waits for a frame to be drawn. The first tick comes before the
+    /// rows have been given their size, which is the size the fold has to
+    /// start from; the second comes after.
+    fn fold(&self, rows: Vec<Morph>) {
+        if rows.is_empty() {
+            return;
+        }
+
+        let rows = Rc::new(rows);
+        let drawing = Rc::clone(&rows);
+        // The clock is read rather than the wall time, and the first frame is
+        // whenever the compositor gets round to drawing one.
+        let started: Cell<Option<i64>> = Cell::new(None);
+
+        let ticking = self.window.add_tick_callback(move |_, clock| {
+            let now = clock.frame_time();
+            let start = started.get().unwrap_or_else(|| {
+                started.set(Some(now));
+                now
+            });
+            #[allow(clippy::cast_precision_loss)]
+            let elapsed = (now - start) as f32 / 1_000.0;
+
+            for row in drawing.iter() {
+                row.draw(quintic(elapsed / FOLD));
+            }
+
+            glib::ControlFlow::Continue
+        });
+
+        // The timer is what ends it, rather than the last frame: it runs
+        // whether or not anything was ever drawn, and a row left halfway is a
+        // row the next switch would animate out of the wrong place.
+        let folding = Rc::clone(&self.folding);
+        let settling = Rc::clone(&rows);
+        let ending = glib::timeout_add_local_once(FOLDED, move || {
+            if let Some(Folding { ticking, .. }) = folding.take() {
+                ticking.remove();
+            }
+
+            for row in settling.iter() {
+                row.settle();
+            }
+        });
+
+        self.folding.replace(Some(Folding { ticking, ending }));
+    }
+
+    /// Calls off a handover, putting the rows it was moving back to how they
+    /// rest. They are usually about to be thrown away, but not always: a
+    /// switch can be cancelled as well as replaced.
+    fn unfold(&self) {
+        if let Some(Folding { ticking, ending }) = self.folding.take() {
+            ticking.remove();
+            ending.remove();
+        }
     }
 
     /// Puts a window's tile into `row`, showing whatever has been captured of
@@ -1023,6 +1238,7 @@ impl Overlay {
     }
 
     pub(crate) fn hide(&self) {
+        self.unfold();
         self.stop();
         self.window.set_visible(false);
     }
@@ -1153,6 +1369,137 @@ struct Frame {
     size: i32,
 }
 
+/// One window of a row mid-handover: a marker growing into a thumbnail, or the
+/// other way about.
+struct Morphing {
+    tile: gtk4::Box,
+    frame: gtk4::Overlay,
+    picture: gtk4::Picture,
+    marker: gtk4::Label,
+    title: gtk4::Label,
+    width: i32,
+}
+
+/// A row mid-handover, and what it settles into.
+struct Morph {
+    sideways: gtk4::ScrolledWindow,
+    settled: gtk4::Widget,
+    windows: Vec<Morphing>,
+    /// How tall the row is when it is open, and how tall one thumbnail is.
+    open: i32,
+    tall: i32,
+    opening: bool,
+}
+
+impl Morph {
+    /// Puts the row where it is `through` of the way through the handover.
+    #[allow(clippy::cast_possible_truncation)]
+    fn draw(&self, through: f32) {
+        let through = if self.opening { through } else { 1.0 - through };
+        let between = |to: i32| PILL + ((to - PILL) as f32 * through) as i32;
+
+        // The row is held at a height of its own, so that what it contains can
+        // be taller than it is and be cut off at the fold.
+        // Let go of the floor before raising the ceiling: a scroller will not
+        // hold a minimum above its own maximum, and the two cross on the way
+        // up.
+        let height = between(self.open);
+        self.sideways.set_min_content_height(-1);
+        self.sideways.set_max_content_height(height);
+        self.sideways.set_min_content_height(height);
+
+        let frame = between(self.tall);
+
+        for window in &self.windows {
+            window.frame.set_size_request(window.width, frame);
+            // The thumbnail is stretched to whatever height the marker is at,
+            // so it is squashed flat to begin with and whole at the end; the
+            // marker's own colours show through it until it is.
+            window.picture.set_opacity(f64::from(through));
+            window.marker.set_opacity(f64::from(1.0 - through));
+            window.title.set_opacity(f64::from(through));
+        }
+    }
+
+    /// Puts the row back to how it rests, which is built by the same code that
+    /// builds every other row.
+    fn settle(&self) {
+        self.sideways.set_child(Some(&self.settled));
+        self.sideways.set_min_content_height(-1);
+        self.sideways.set_max_content_height(-1);
+        self.sideways
+            .set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Never);
+        self.sideways.vadjustment().set_value(0.0);
+    }
+}
+
+/// A handover in progress: the frames it draws, and the timer that ends it.
+struct Folding {
+    ticking: gtk4::TickCallbackId,
+    ending: glib::SourceId,
+}
+
+/// One window of a row that is folding or opening.
+///
+/// A marker and a thumbnail are the same width, so the only thing that changes
+/// is the height — and the thumbnail is laid over the marker rather than
+/// beside it, so that it arrives out of the marker's own colours.
+fn morphing(title: &str, shape: f32, tall: u32, texture: Option<&gdk::MemoryTexture>) -> Morphing {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let width = ((tall as f32 * shape) as i32).max(4);
+
+    let marker = gtk4::Label::new(Some(title));
+    marker.add_css_class("marker");
+    marker.set_ellipsize(pango::EllipsizeMode::End);
+    marker.set_xalign(0.0);
+    marker.set_hexpand(true);
+    marker.set_max_width_chars(1);
+    marker.set_valign(gtk4::Align::Center);
+
+    let picture = gtk4::Picture::new();
+    // Stretched rather than fitted: it covers the marker at every height it
+    // passes through, which is what makes it look like one thing growing
+    // rather than two things crossing over.
+    picture.set_content_fit(gtk4::ContentFit::Fill);
+
+    if let Some(texture) = texture {
+        picture.set_paintable(Some(texture));
+    }
+
+    let frame = gtk4::Overlay::new();
+    frame.add_css_class("thumbnail");
+    frame.add_css_class("pill");
+    frame.set_valign(gtk4::Align::Center);
+    // Explicitly, so that the name inside can fill the frame without the frame
+    // itself filling the row: it is the width of its own window, as a marker
+    // and as a thumbnail alike.
+    frame.set_hexpand(false);
+    frame.set_child(Some(&marker));
+    frame.add_overlay(&picture);
+
+    let title = gtk4::Label::new(Some(title));
+    title.add_css_class("title");
+    title.set_ellipsize(pango::EllipsizeMode::End);
+    title.set_max_width_chars(1);
+    title.set_xalign(0.0);
+
+    let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    tile.add_css_class("tile");
+    tile.set_hexpand(false);
+    tile.append(&frame);
+    tile.append(&title);
+
+    Morphing {
+        tile,
+        frame,
+        picture,
+        marker,
+        title,
+        width,
+    }
+}
+
+/// An animation in progress: the frames it draws, and the timer that ends it.
 /// An animation in progress: the frames it draws, and the timer that ends it.
 struct Playing {
     ticking: gtk4::TickCallbackId,
@@ -1172,6 +1519,14 @@ fn eased(through: f32) -> f32 {
     let left = 1.0 - through.clamp(0.0, 1.0);
 
     1.0 - left * left * left
+}
+
+/// Quick away and a long settle, which is the shape the compositor moves its
+/// own windows and layers on.
+fn quintic(through: f32) -> f32 {
+    let left = 1.0 - through.clamp(0.0, 1.0);
+
+    1.0 - left * left * left * left * left
 }
 
 /// Slow to begin with and gathering pace, which is how things move when they
@@ -1575,7 +1930,7 @@ impl Cycling {
 }
 
 /// Puts a gradient on a marker, taking off whichever one it was wearing.
-fn wear(pill: &gtk4::Box, tint: Tint) {
+fn wear(pill: &impl IsA<gtk4::Widget>, tint: Tint) {
     for worn in pill.css_classes() {
         if worn.starts_with("tint-") {
             pill.remove_css_class(&worn);
