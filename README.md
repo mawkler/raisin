@@ -57,25 +57,25 @@ does anything.
 [keys]
 # These only do something while the switcher is on screen. The rest of the time
 # they belong to whatever you're using.
-next = "Tab"              # move the highlight on
-previous = "SHIFT + Tab"  # and back
-cancel = "Escape"         # close without switching
+next = "Tab"             # move the highlight on
+previous = "SHIFT + Tab" # and back
+cancel = "Escape"        # close without switching
 
 # Which letter targets which application, held with Super.
 [keys.apps]
-t = "ghostty"                                        # Super + t
+t = "ghostty"                                   # Super + t
 s = "spotify"
-w = { cmd = "brave", app_id = "brave-browser" }      # when the window class differs
+w = { cmd = "brave", app_id = "brave-browser" } # when the window class differs
 
 [switcher]
-delay = 90          # milliseconds Super has to stay held before the switcher appears
-width = "50%"       # of the screen, or a number of pixels like 900
+delay = 90         # milliseconds Super has to stay held before the switcher appears
+width = "50%"      # of the screen, or a number of pixels like 900
 max_height = "40%"
-icons = true        # show each application's icon beside its name
+icons = true       # show each application's icon beside its name
 
 [previews]
-enabled = true    # show what each window looks like
-height = 105      # pixels tall; every thumbnail is, and the width follows the window
+enabled = true # show what each window looks like
+height = 105   # pixels tall; every thumbnail is, and the width follows the window
 
 # What to call an application, by the window class it uses. Optional: the name
 # comes from the application's desktop entry otherwise.
