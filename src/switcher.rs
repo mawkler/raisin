@@ -144,8 +144,12 @@ impl Session {
         self.index = step(self.index, windows.len(), direction);
     }
 
-    /// Points the session at another application's group, re-running the
-    /// pre-selection rule. Cycles instead if it's the group already shown.
+    /// Points the session at another application's group. Cycles instead if
+    /// it's the group already shown.
+    ///
+    /// Coming back to the group of the window that was focused highlights
+    /// that window: having looked elsewhere, the way back is to where you
+    /// were. Any other group gets the pre-selection rule.
     pub(crate) fn switch_to_group(
         &mut self,
         group: &str,
@@ -158,7 +162,10 @@ impl Session {
             return;
         }
 
-        self.index = initial_index(&self.groups[group], focused, direction);
+        let windows = &self.groups[group];
+        let focused_index = focused.and_then(|focused| windows.iter().position(|w| w == focused));
+
+        self.index = focused_index.unwrap_or_else(|| initial_index(windows, focused, direction));
         self.group = group.to_owned();
         self.label = label.to_owned();
     }
@@ -344,22 +351,45 @@ mod tests {
 
     #[test]
     fn switching_to_another_group_re_runs_the_pre_selection_rule() {
+        let focused = window("2", "brave-browser", "Hyprland Wiki");
+        let mut session = session(Some(&focused));
+
+        assert_eq!(session.selected_window().id, "1");
+
+        session.switch_to_group("brave-browser", None, "brave", Direction::Forward);
+        session.switch_to_group(
+            "com.mitchellh.ghostty",
+            None,
+            "ghostty",
+            Direction::Backward,
+        );
+
+        assert_eq!(session.selected_window().id, "3");
+    }
+
+    #[test]
+    fn switching_back_to_the_focused_group_highlights_the_focused_window() {
         let focused = window("1", "com.mitchellh.ghostty", "ghostty: raisin");
         let mut session = session(Some(&focused));
+
+        assert_eq!(session.selected_window().id, "3");
 
         session.switch_to_group("brave-browser", Some(&focused), "brave", Direction::Forward);
 
         assert_eq!(session.group(), "brave-browser");
         assert_eq!(session.selected_window().id, "2");
 
-        session.switch_to_group(
-            "com.mitchellh.ghostty",
-            Some(&focused),
-            "ghostty",
-            Direction::Forward,
-        );
+        for direction in [Direction::Forward, Direction::Backward] {
+            session.switch_to_group(
+                "com.mitchellh.ghostty",
+                Some(&focused),
+                "ghostty",
+                direction,
+            );
+            assert_eq!(session.selected_window().id, "1");
 
-        assert_eq!(session.selected_window().id, "3");
+            session.switch_to_group("brave-browser", Some(&focused), "brave", direction);
+        }
     }
 
     #[test]
