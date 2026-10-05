@@ -234,7 +234,6 @@ mod tests {
             id: id.to_owned(),
             app_id: app_id.to_owned(),
             title: title.to_owned(),
-            identifier: id.to_owned(),
             size: None,
             initial_title: String::new(),
         }

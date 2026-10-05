@@ -11,13 +11,9 @@ pub(crate) struct Window {
     pub id: String,
     pub app_id: String,
     pub title: String,
-    /// What the window is called by the Wayland protocols that capture it,
-    /// which is not what the compositor's own IPC calls it. Empty when the
-    /// compositor doesn't offer one, which means no preview for this window.
-    pub identifier: String,
-    /// How big the window is on screen, which is the shape its thumbnail will
-    /// come back. `None` when the compositor doesn't say, and the tile falls
-    /// back to a common shape until the capture arrives.
+    /// How big the window is on screen, which is the shape its thumbnail
+    /// takes. `None` when the compositor doesn't say, and the tile falls back
+    /// to a common shape.
     pub size: Option<(u32, u32)>,
     /// What the window called itself when it opened. Applications usually put
     /// their own name there before they have a document to name instead, which

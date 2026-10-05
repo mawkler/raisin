@@ -16,10 +16,16 @@ pub(crate) enum Message {
 }
 
 fn socket_path() -> PathBuf {
+    runtime_path(".sock")
+}
+
+/// Somewhere in the runtime directory that belongs to this daemon: one per
+/// Wayland display, since that is how many daemons there can be.
+pub(crate) fn runtime_path(suffix: &str) -> PathBuf {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_owned());
     let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_owned());
 
-    PathBuf::from(runtime_dir).join(format!("raisin-{display}.sock"))
+    PathBuf::from(runtime_dir).join(format!("raisin-{display}{suffix}"))
 }
 
 /// The one running daemon. Dropping it takes its socket away.

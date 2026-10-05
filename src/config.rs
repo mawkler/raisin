@@ -292,17 +292,6 @@ pub(crate) enum Size {
     Portion(f32),
 }
 
-impl Size {
-    /// The size in pixels, for a screen this wide or this tall.
-    pub(crate) fn pixels(self, screen: i32) -> i32 {
-        match self {
-            Self::Pixels(pixels) => pixels,
-            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-            Self::Portion(portion) => (screen as f32 * portion) as i32,
-        }
-    }
-}
-
 /// A size as the configuration file writes it.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -504,9 +493,7 @@ mod tests {
         );
 
         assert_eq!(config.switcher.width, Size::Portion(0.6));
-        assert_eq!(config.switcher.width.pixels(1920), 1152);
         assert_eq!(config.switcher.max_height, Size::Pixels(300));
-        assert_eq!(config.switcher.max_height.pixels(1080), 300);
     }
 
     #[test]

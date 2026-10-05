@@ -1,9 +1,11 @@
-//! The long-running half of raisin: it owns the switcher window, listens for
-//! the keys it asked Hyprland to bind, and decides what each one means.
+//! The long-running half of raisin: it listens for the keys it asked Hyprland
+//! to bind, decides what each one means, and tells the switcher what to show.
 
+mod apps;
 mod controller;
 mod ipc;
-mod overlay;
+mod quickshell;
+mod view;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -16,7 +18,6 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use gtk4::glib;
 
 use crate::compositor::Compositor as _;
 use crate::compositor::Window;
@@ -25,10 +26,9 @@ use crate::compositor::integrations::hyprland::{
     SWITCH_EVENT,
 };
 use crate::config::{Config, Target};
-use crate::preview::{Previews, Request, Thumbnail};
-use crate::switcher::{Direction, Row, Session};
+use crate::switcher::{Direction, Session};
 use controller::{Controller, Effect, Event};
-use overlay::{Absent, Overlay};
+use view::{Absent, View};
 
 pub(crate) use ipc::switch;
 
@@ -42,7 +42,7 @@ const SETTLE: Duration = Duration::from_millis(60);
 /// # Errors
 ///
 /// Returns an error if Hyprland isn't running, if another daemon already is,
-/// or if GTK, the window or the keybinds couldn't be set up.
+/// or if the keybinds couldn't be set up.
 pub(crate) fn run(path: Option<&Path>) -> Result<()> {
     let config_path = Config::path(path);
     let config = Rc::new(Config::load(path)?);
@@ -57,36 +57,32 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
     // fighting over the keybinds.
     let instance = ipc::Instance::acquire()?;
 
-    gtk4::init().context("failed to initialise GTK")?;
-
     warn_about_missing(&config);
 
     let binds =
         Rc::new(Binds::install(&config).context("failed to install raisin's Hyprland keybinds")?);
 
-    let (previews, thumbnails) = Previews::start();
+    // Started before the first switch can arrive, so that the view is up and
+    // warm by the time one is worth showing.
+    let (view, connections) = View::start(&config);
 
     let daemon = Rc::new(Daemon {
         controller: RefCell::new(Controller::default()),
-        overlay: Overlay::new(
-            &config.switcher,
-            &config.keys,
-            &config.previews,
-            &config.names,
-        )
-        .context("failed to build the switcher window")?,
+        view,
         compositor,
         binds: RefCell::new(binds),
         config: RefCell::new(config),
         config_path: config_path.clone(),
-        previews,
     });
 
     let main_loop = glib::MainLoop::new(None, false);
 
     watch_hyprland(&daemon, &main_loop)?;
     watch_clients(&daemon, instance.listener())?;
-    watch_thumbnails(&daemon, thumbnails);
+
+    if let Some(connections) = connections {
+        watch_view(&daemon, connections);
+    }
 
     if let Some(path) = &config_path {
         watch_config(&daemon, path);
@@ -98,6 +94,7 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
 
     // Leave Hyprland the way it was found.
     daemon.binds().remove();
+    daemon.view.stop();
     drop(instance);
 
     Ok(())
@@ -105,12 +102,11 @@ pub(crate) fn run(path: Option<&Path>) -> Result<()> {
 
 struct Daemon {
     controller: RefCell<Controller>,
-    overlay: Overlay,
+    view: View,
     compositor: hyprland::Compositor,
     binds: RefCell<Rc<Binds>>,
     config: RefCell<Rc<Config>>,
     config_path: Option<PathBuf>,
-    previews: Previews,
 }
 
 impl Daemon {
@@ -147,12 +143,7 @@ impl Daemon {
 
         match Binds::install(&config) {
             Ok(binds) => {
-                self.overlay.reconfigure(
-                    &config.switcher,
-                    &config.keys,
-                    &config.previews,
-                    &config.names,
-                );
+                self.view.reconfigure(&config);
                 self.binds.replace(Rc::new(binds));
                 self.config.replace(config);
             }
@@ -186,29 +177,22 @@ impl Daemon {
                     daemon.handle(Event::Reveal { session });
                 });
             }
-            Effect::Fill => {
-                let Some(config) = self.filled() else {
-                    return;
-                };
-
-                // Capturing starts here rather than when the key was pressed:
-                // Fill only happens once the switcher is actually on screen,
-                // so a tap quick enough to skip it captures nothing at all.
-                self.capture(&config);
-            }
+            // The view hears about a switch here and no sooner: Fill only
+            // happens once the switcher is to be on screen, so a tap quick
+            // enough to skip it shows nothing and captures nothing at all.
+            Effect::Fill => self.fill(),
             Effect::Highlight => {
                 if let Some(session) = self.controller.borrow().session() {
-                    self.overlay.highlight(session);
+                    self.view.highlight(session);
                 }
             }
             Effect::Show => {
-                self.overlay.show();
+                self.view.show();
                 self.binds().capture_session_keys();
             }
             Effect::Hide => {
-                self.overlay.hide();
+                self.view.hide();
                 self.binds().release_session_keys();
-                self.previews.cancel();
             }
             Effect::Focus(window) => {
                 if let Err(error) = self.compositor.focus_window(&window) {
@@ -231,87 +215,22 @@ impl Daemon {
             return;
         }
 
-        self.overlay.starting(target.search(), &target.app);
+        self.view.starting(target.search(), &target.app);
     }
 
-    /// Asks for a thumbnail of every window on screen, the group being
-    /// still blank first, then the group being switched to: captures are taken
-    /// in order and each one arrives on its own. Every window is asked for,
-    /// not only the ones showing a thumbnail — a marker is coloured from its
-    /// own window, so it needs that window captured too.
-    ///
-    /// Asking for the blank ones first is what stops a window at the end of
-    /// the strip from staying black for good. A batch is abandoned whenever
-    /// the switcher closes, so an order that started with the same windows
-    /// every time would spend each switch re-capturing what it already has and
-    /// never reach the rest.
-    ///
-    /// Every request names every window that is wanted rather than the ones
-    /// that changed, which is what lets a later request replace this one
-    /// outright.
-    fn capture(&self, config: &Config) {
-        if !config.previews.enabled {
-            return;
-        }
-
+    /// Fills the switcher from the switch in progress.
+    fn fill(&self) {
+        let config = self.config();
         let controller = self.controller.borrow();
         let Some(session) = controller.session() else {
             return;
         };
 
-        let mut requests = Vec::new();
-        let mut current = false;
-
-        for row in session.rows() {
-            match row {
-                Row::Group { app_id, .. } => current = app_id == session.group(),
-                Row::Window { window, .. } => {
-                    if window.identifier.is_empty() {
-                        continue;
-                    }
-
-                    let request = Request {
-                        identifier: window.identifier.clone(),
-                        label: if window.title.is_empty() {
-                            window.app_id.clone()
-                        } else {
-                            format!("{} ({})", window.title, window.app_id)
-                        },
-                    };
-
-                    requests.push((self.overlay.captured(&window.identifier), !current, request));
-                }
-            }
-        }
-
-        // Stable, so windows keep the order the compositor gave them within
-        // each of the four cases.
-        requests.sort_by_key(|(captured, untargeted, _)| (*captured, *untargeted));
-        let requests = requests.into_iter().map(|(.., request)| request).collect();
-        drop(controller);
-
-        // Captured at the size it will be shown at: a picture asks for as much
-        // room as its texture is wide, so a larger one would stretch the panel
-        // rather than sharpen the thumbnail.
-        self.previews.capture(requests, config.previews.height);
-    }
-
-    /// Fills the overlay from the switch in progress, and says what the
-    /// configuration is while it's at it.
-    fn filled(&self) -> Option<Rc<Config>> {
-        let config = self.config();
-        let controller = self.controller.borrow();
-        let session = controller.session()?;
-
-        self.overlay.fill(
+        self.view.fill(
             session,
             &triggers(&config, session),
             &absent(&config, session),
         );
-
-        drop(controller);
-
-        Some(config)
     }
 
     /// A mapped key was pressed: take a snapshot of the open windows and let
@@ -610,13 +529,14 @@ fn absent(config: &Config, session: &Session) -> Vec<Absent> {
         .collect()
 }
 
-/// Puts each window's thumbnail into the switcher as it's captured.
-fn watch_thumbnails(daemon: &Rc<Daemon>, thumbnails: async_channel::Receiver<Thumbnail>) {
+/// Tells the view what is going on each time it connects: when it first
+/// starts, and again whenever it has had to be started over.
+fn watch_view(daemon: &Rc<Daemon>, connections: async_channel::Receiver<()>) {
     let daemon = Rc::clone(daemon);
 
     glib::MainContext::default().spawn_local(async move {
-        while let Ok(thumbnail) = thumbnails.recv().await {
-            daemon.overlay.set_thumbnail(thumbnail);
+        while connections.recv().await.is_ok() {
+            daemon.view.connected();
         }
     });
 }

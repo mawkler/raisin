@@ -73,10 +73,6 @@ struct Client {
     mapped: bool,
     #[serde(rename = "focusHistoryID")]
     focus_history_id: i32,
-    /// The same string Hyprland gives a window on an
-    /// `ext_foreign_toplevel_handle_v1`, which is how a capture finds it.
-    #[serde(default)]
-    stable_id: String,
     /// Width and height on screen.
     #[serde(default)]
     size: [i32; 2],
@@ -90,7 +86,6 @@ impl From<Client> for Window {
             id: client.address,
             app_id: client.class,
             title: client.title,
-            identifier: client.stable_id,
             initial_title: client.initial_title,
             #[allow(clippy::cast_sign_loss)]
             size: match client.size {
