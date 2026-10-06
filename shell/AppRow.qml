@@ -90,18 +90,20 @@ Item {
         clip: true
         contentX: appRow.openness * Theme.lerp(appRow.fromScroll, appRow.scrollFor(appRow.heldTile), appRow.glide)
 
+        // Room either side of the windows for the highlight, which reaches a
+        // little way around the one it is on.
         Item {
             id: tiles
 
-            width: strip.width
+            width: strip.width + 2 * Theme.tilePad
             height: strip.height
 
             // Behind the window a release of Super would land on.
             Rectangle {
                 readonly property Item tile: appRow.heldTile
 
-                x: tile ? Theme.lerp(appRow.fromX, tile.x, appRow.glide) : 0
-                width: tile ? Theme.lerp(appRow.fromWidth, tile.width, appRow.glide) : 0
+                x: tile ? strip.x + Theme.lerp(appRow.fromX, tile.x, appRow.glide) - Theme.tilePad : 0
+                width: tile ? Theme.lerp(appRow.fromWidth, tile.width, appRow.glide) + 2 * Theme.tilePad : 0
                 height: tile ? tile.height : 0
                 radius: Theme.tileRadius
                 color: Theme.selection
@@ -111,10 +113,14 @@ Item {
                 visible: tile !== null && opacity > 0
             }
 
+            // Every window is as wide, and as far from the next, as a
+            // marker as it is as a thumbnail: a row opening only unfolds
+            // downwards, and nothing in it moves sideways.
             Row {
                 id: strip
 
-                spacing: Theme.lerp(Theme.markerGap, Theme.tileGap, appRow.openness)
+                x: Theme.tilePad
+                spacing: Theme.windowGap
 
                 Repeater {
                     id: tileRepeater
@@ -163,7 +169,7 @@ Item {
         if (!tile || overflow <= 0)
             return 0;
 
-        return Theme.clamp(tile.x + tile.width / 2 - scroller.width / 2, 0, overflow);
+        return Theme.clamp(strip.x + tile.x + tile.width / 2 - scroller.width / 2, 0, overflow);
     }
 
     onSelectedTileChanged: {

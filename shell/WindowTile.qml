@@ -2,10 +2,11 @@
 // a line-tall marker the rest of the time, and every shape in between while a
 // switch moves from one to the other.
 //
-// A marker is a slice through the middle of its window, blurred and faint, so
+// A marker is its whole window folded down to a line, blurred and faint, so
 // that it is recognisable by its colours while its title stays readable on
-// top. Opening is the frame growing until it shows the whole window, as the
-// blur clears.
+// top. Opening is the window unfolding downwards to its full height as the
+// blur clears. Only the height changes: a marker is exactly as wide as its
+// thumbnail, and stands exactly where it does.
 
 pragma ComponentBehavior: Bound
 
@@ -36,17 +37,16 @@ Item {
     readonly property int tall: settings.previewHeight
 
     // Every thumbnail is the same height and as wide as its own window, so a
-    // row of them reads as the windows themselves; and a marker is exactly as
-    // wide as its thumbnail, so a row of markers has the same rhythm.
+    // row of them reads as the windows themselves.
     readonly property real wide: Math.max(4, Math.round(tall * (window?.aspect ?? 1.6)))
     // A tall, narrow window would otherwise leave no room for its title.
-    readonly property real roomy: Math.max(wide, tall)
-
-    readonly property real pad: Theme.lerp(0, Theme.tilePad, openness)
-    readonly property real frameWidth: Theme.lerp(wide, roomy, openness)
+    readonly property real frameWidth: Math.max(wide, tall)
     readonly property real frameHeight: Theme.lerp(Theme.markerHeight, previews ? tall : 0, openness)
+    // The room above and below a thumbnail, which the highlight fills. The
+    // room either side of it is the row's, so that it doesn't change.
+    readonly property real pad: Theme.lerp(0, Theme.tilePad, openness)
 
-    width: frameWidth + 2 * pad
+    width: frameWidth
     height: frameHeight + openness * (Theme.titleTop + caption.implicitHeight) + 2 * pad
 
     // The window as Quickshell knows it, which is what gets captured.
@@ -109,7 +109,6 @@ Item {
     ClippingRectangle {
         id: frame
 
-        x: tile.pad
         y: tile.pad
         width: tile.frameWidth
         height: tile.frameHeight
@@ -123,16 +122,21 @@ Item {
         opacity: tile.previews ? 1 : 1 - tile.openness
         visible: opacity > 0
 
-        // The whole window at the size of its thumbnail, centred: the frame
-        // shows as much of it as it is tall.
+        // The whole window at the size of its thumbnail, squeezed to the
+        // height of the frame from its top edge down: folded into a line, and
+        // unfolding with it.
         //
         // The blur goes on an item around the capture rather than on the
         // capture itself, which draws nothing at all into a layer of its own.
+        // Squeezed by a transform rather than by its height, so that the
+        // layer keeps one size rather than being made again every frame.
         Item {
             x: (parent.width - width) / 2
-            y: (parent.height - height) / 2
             width: tile.wide
             height: tile.tall
+            transform: Scale {
+                yScale: tile.frameHeight / tile.tall
+            }
             visible: tile.previews
             opacity: tile.arrived * Theme.lerp(Theme.markerShows, 1, tile.openness)
 
@@ -189,7 +193,7 @@ Item {
     Text {
         id: caption
 
-        x: tile.pad + 2
+        x: 2
         y: tile.pad + tile.frameHeight + tile.openness * Theme.titleTop
         width: tile.frameWidth - 4
         text: tile.label

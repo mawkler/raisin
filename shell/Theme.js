@@ -28,11 +28,13 @@ var iconSize = 16;
 // tall, and as wide as its thumbnail would be.
 var markerHeight = 24;
 var markerRadius = 4;
-var markerGap = 5;
 var markerInset = 6;
 
-// A window of the application being switched to.
-var tileGap = 8;
+// Between one window and the next, marker or thumbnail alike.
+var windowGap = 12;
+
+// A window of the application being switched to: the room around its
+// thumbnail, which the highlight fills.
 var tilePad = 6;
 var tileRadius = 10;
 var thumbRadius = 6;
