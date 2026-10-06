@@ -22,6 +22,14 @@ Item {
     required property int screenHeight
 
     readonly property string family: settings.font ?? ""
+    // The font keys are written in, so that every key is as wide as every
+    // other. The desktop's own monospaced font when it is installed, and
+    // otherwise whatever the system calls monospace, which always is.
+    readonly property string mono: {
+        const wanted = settings.mono ?? "";
+
+        return wanted !== "" && Qt.fontFamilies().includes(wanted) ? wanted : "monospace";
+    }
     readonly property int contentWidth: resolve(settings.width, screenWidth)
     readonly property int maxContentHeight: resolve(settings.maxHeight, screenHeight)
     readonly property int chromeHeight: Theme.padTop + title.implicitHeight + Theme.titleGap + Theme.padBottom
@@ -166,6 +174,7 @@ Item {
                     key: switcher.scene?.cycleKey ?? ""
                     says: "next"
                     family: switcher.family
+                    mono: switcher.mono
                     visible: key !== ""
                 }
 
@@ -173,6 +182,7 @@ Item {
                     key: switcher.scene?.cycleKey ? "Shift + " + switcher.scene.cycleKey : ""
                     says: "previous"
                     family: switcher.family
+                    mono: switcher.mono
                     visible: key !== ""
                 }
 
@@ -180,6 +190,7 @@ Item {
                     key: switcher.settings.cancelKey
                     says: "cancel"
                     family: switcher.family
+                    mono: switcher.mono
                 }
             }
         }
@@ -221,6 +232,7 @@ Item {
                         capturing: switcher.capturing
                         animate: switcher.animate
                         family: switcher.family
+                        mono: switcher.mono
                         nameWidth: switcher.nameWidth
                         headerWidth: switcher.headerWidth
                     }
@@ -269,6 +281,7 @@ Item {
                                 name: modelData.name
                                 showIcon: switcher.settings.icons
                                 family: switcher.family
+                                mono: switcher.mono
                             }
                         }
                     }
@@ -328,13 +341,14 @@ Item {
         property string key
         property string says
         property string family
+        property string mono
 
         spacing: 5
 
         Keycap {
             anchors.verticalCenter: parent.verticalCenter
             text: hint.key
-            family: hint.family
+            family: hint.mono
         }
 
         Text {

@@ -71,6 +71,9 @@ pub(crate) struct Settings {
     /// The font GTK applications use, so that the switcher reads like them
     /// rather than like whatever Qt falls back to.
     font: Option<String>,
+    /// And their monospaced one, which keys are written in so that they are
+    /// all one width.
+    mono: Option<String>,
 }
 
 /// A length, which the view resolves against the screen it is on.
@@ -148,8 +151,7 @@ pub(crate) struct View {
     shell: Option<Rc<Quickshell>>,
     apps: RefCell<Apps>,
     settings: RefCell<Settings>,
-    /// The font, read once: asking costs a process.
-    font: Option<String>,
+    fonts: Fonts,
     /// The switch the view is showing, or about to, for a view that connects
     /// partway through one.
     scene: RefCell<Option<Scene>>,
@@ -161,7 +163,7 @@ impl View {
     /// wants telling what is going on, through [`View::connected`].
     pub(crate) fn start(config: &Config) -> (Self, Option<async_channel::Receiver<()>>) {
         let apps = Apps::new(config.names.clone());
-        let font = gtk_font();
+        let fonts = Fonts::read();
 
         let (shell, connections) = match Quickshell::start() {
             Ok((shell, connections)) => (Some(shell), Some(connections)),
@@ -174,8 +176,8 @@ impl View {
         let view = Self {
             shell,
             apps: RefCell::new(apps),
-            settings: RefCell::new(settings(config, font.clone())),
-            font,
+            settings: RefCell::new(settings(config, &fonts)),
+            fonts,
             scene: RefCell::new(None),
             shown: Cell::new(false),
         };
@@ -200,7 +202,7 @@ impl View {
     pub(crate) fn reconfigure(&self, config: &Config) {
         self.apps.borrow_mut().rename(config.names.clone());
 
-        let settings = settings(config, self.font.clone());
+        let settings = settings(config, &self.fonts);
         self.send(&Message::Config(settings.clone()));
         self.settings.replace(settings);
     }
@@ -272,7 +274,7 @@ impl View {
     }
 }
 
-fn settings(config: &Config, font: Option<String>) -> Settings {
+fn settings(config: &Config, fonts: &Fonts) -> Settings {
     Settings {
         width: config.switcher.width.into(),
         max_height: config.switcher.max_height.into(),
@@ -280,7 +282,8 @@ fn settings(config: &Config, font: Option<String>) -> Settings {
         previews: config.previews.enabled,
         icons: config.switcher.icons,
         cancel_key: keycap_name(&config.keys.cancel),
-        font,
+        font: fonts.text.clone(),
+        mono: fonts.mono.clone(),
     }
 }
 
@@ -379,11 +382,27 @@ fn keycap_name(key: &config::Key) -> String {
     key.to_string().replace("Escape", "Esc")
 }
 
-/// The family of the font GTK applications are set in, if there is a setting
-/// to say so.
-fn gtk_font() -> Option<String> {
+/// The fonts GTK applications are set in, read once: asking costs a process
+/// each time.
+struct Fonts {
+    text: Option<String>,
+    mono: Option<String>,
+}
+
+impl Fonts {
+    fn read() -> Self {
+        Self {
+            text: gtk_font("font-name"),
+            mono: gtk_font("monospace-font-name"),
+        }
+    }
+}
+
+/// The family of one of the fonts GTK applications are set in, if there is a
+/// setting to say so.
+fn gtk_font(setting: &str) -> Option<String> {
     let output = Command::new("gsettings")
-        .args(["get", "org.gnome.desktop.interface", "font-name"])
+        .args(["get", "org.gnome.desktop.interface", setting])
         .output()
         .ok()?;
 
@@ -525,6 +544,7 @@ mod tests {
     fn a_font_description_comes_apart_into_its_family() {
         assert_eq!(family("'Noto Sans,  10'\n").as_deref(), Some("Noto Sans"));
         assert_eq!(family("'Cantarell 11'").as_deref(), Some("Cantarell"));
+        assert_eq!(family("'Adwaita Mono 11'").as_deref(), Some("Adwaita Mono"));
         assert_eq!(family("''").as_deref(), None);
     }
 }

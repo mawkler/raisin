@@ -17,13 +17,14 @@ Row {
     property real nameWidth: -1
     property bool showIcon: true
     property string family
+    property string mono
 
     spacing: 7
 
     Keycap {
         anchors.verticalCenter: parent.verticalCenter
         text: header.key
-        family: header.family
+        family: header.mono
         visible: header.key !== ""
     }
 

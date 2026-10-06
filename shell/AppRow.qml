@@ -18,6 +18,8 @@ Item {
     required property bool capturing
     required property bool animate
     required property string family
+    // The font keys are written in.
+    required property string mono
     required property real nameWidth
     // How wide every row's name is, so that every row's windows start in the
     // same place.
@@ -71,6 +73,7 @@ Item {
         nameWidth: appRow.nameWidth
         showIcon: appRow.settings.icons
         family: appRow.family
+        mono: appRow.mono
     }
 
     // A row with more windows than fit keeps the highlighted one in view.
