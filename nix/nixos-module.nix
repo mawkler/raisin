@@ -68,6 +68,18 @@ in
       after = [ "graphical-session.target" ];
       wantedBy = [ "graphical-session.target" ];
 
+      # The switcher is drawn by Quickshell, which the daemon looks for on
+      # PATH. It comes from the system's own packages rather than raisin's:
+      # anything that draws has to match the system's graphics drivers. The
+      # profiles are what the applications raisin starts are installed in.
+      path = [
+        pkgs.quickshell
+        "/run/wrappers"
+        "%h/.nix-profile"
+        "/etc/profiles/per-user/%u"
+        "/run/current-system/sw"
+      ];
+
       serviceConfig = {
         ExecStart = lib.concatStringsSep " " (
           [ "${cfg.package}/bin/raisin" "daemon" ]

@@ -23,12 +23,8 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      # The switcher window is GTK 4 on the compositor's overlay layer.
-      guiInputs =
-        pkgs: with pkgs; [
-          gtk4
-          gtk4-layer-shell
-        ];
+      # The daemon runs on GLib's main loop.
+      buildInputs = pkgs: [ pkgs.glib ];
     in
     {
       packages = forAllSystems (system: {
@@ -40,11 +36,8 @@
           naersk-lib.buildPackage {
             src = ./.;
             meta.mainProgram = "raisin";
-            nativeBuildInputs = with pkgs; [
-              pkg-config
-              wrapGAppsHook4
-            ];
-            buildInputs = guiInputs pkgs;
+            nativeBuildInputs = with pkgs; [ pkg-config ];
+            buildInputs = buildInputs pkgs;
           };
       });
 
@@ -76,7 +69,7 @@
                 pre-commit
                 rustPackages.clippy
               ])
-              ++ guiInputs pkgs;
+              ++ buildInputs pkgs;
             RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
           };
         }
