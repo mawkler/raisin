@@ -10,10 +10,9 @@ IconImage {
     id: icon
 
     property var names: []
-
-    implicitSize: width
-    mipmap: true
-    source: {
+    // Where the icon was found, or nothing when the theme has none of its
+    // names.
+    readonly property string path: {
         for (const name of icon.names ?? []) {
             const found = Quickshell.iconPath(name, true);
 
@@ -23,4 +22,8 @@ IconImage {
 
         return "";
     }
+
+    implicitSize: width
+    mipmap: true
+    source: path
 }

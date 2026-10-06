@@ -255,13 +255,14 @@ pub(crate) struct Switcher {
     /// enough to feel immediate when the user does mean to look.
     #[serde(default = "default_delay")]
     pub(crate) delay: u64,
-    /// How wide the window may grow before it scrolls.
+    /// How wide the switcher is. Windows that don't fit scroll.
     #[serde(default = "default_width")]
     pub(crate) width: Size,
-    /// How tall it may grow.
+    /// How tall it may be. Thumbnails are made smaller to fit, if they have
+    /// to.
     #[serde(default = "default_max_height")]
     pub(crate) max_height: Size,
-    /// Whether to show each application's icon beside its name.
+    /// Whether to show each application's icon, rather than its initials.
     #[serde(default = "enabled")]
     pub(crate) icons: bool,
 }
@@ -367,7 +368,7 @@ fn enabled() -> bool {
 }
 
 fn default_preview_height() -> u32 {
-    105
+    150
 }
 
 #[cfg(test)]

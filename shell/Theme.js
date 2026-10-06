@@ -1,50 +1,54 @@
 .pragma library
 
-// The switcher's look, carried over from the GTK stylesheet it replaces.
-// Colours with an alpha are written #AARRGGBB.
+// The switcher's look. Colours with an alpha are written #AARRGGBB.
 
 // Room around the panel for its shadow. The window never changes size, so
 // this is spent once rather than on every switch.
 var margin = 72;
 
-var panelRadius = 18;
+var panelRadius = 20;
 var padTop = 18;
-var padSide = 16;
-var padBottom = 14;
-// Between the heading line and the applications, and either side of it.
-var titleGap = 14;
+var padSide = 20;
+var padBottom = 16;
 var titleInset = 4;
 
-// One application per row.
-var rowGap = 10;
-var rowPad = 2;
-// Between an application's name and its windows.
-var headerGap = 14;
-// How many characters of an application's name its column has room for.
-var nameChars = 14;
-var iconSize = 16;
+// Top to bottom: the heading line, the applications, and the windows of the
+// one being switched to.
+var headingGap = 18;
+var barGap = 16;
 
-// A window of an application that isn't the one being switched to: a line
-// tall, and as wide as its thumbnail would be.
-var markerHeight = 24;
-var markerRadius = 4;
-var markerInset = 6;
+// The applications: a cell each, with a dot per open window under the icon
+// and the key that reaches it under the cell.
+var cellSize = 54;
+var cellRadius = 15;
+var cellGap = 6;
+var iconSize = 34;
+var dotSize = 4;
+var dotGap = 3;
+// At most this many dots, however many windows there are.
+var dots = 4;
+var keyTop = 6;
+// The room either side of the dot between open applications and closed ones.
+var dividerGap = 8;
 
-// Between one window and the next, marker or thumbnail alike.
-var windowGap = 12;
-
-// A window of the application being switched to: the room around its
-// thumbnail, which the highlight fills.
-var tilePad = 6;
-var tileRadius = 10;
-var thumbRadius = 6;
+// The windows of the application being switched to.
+var cardRadius = 8;
+// The room around a window, which the highlight fills.
+var cardPad = 8;
+var cardGap = 4;
 var titleTop = 6;
+var highlightRadius = 14;
+// Between one application's windows and the next one's as they slide past.
+var pageGap = 48;
+// How much of the next window shows past the highlighted one, when they
+// don't all fit.
+var peek = 40;
 
 var panel = "#f715171c";
 var panelEdge = "#14ffffff";
 var shadow = "#8c000000";
 var heading = "#eef1f7";
-// The window a switch would land on, the applications' names and the hints.
+// The window a switch would land on, the hints, and a window's dots.
 var muted = "#78819a";
 var text = "#c4cad8";
 var selectedText = "#ffffff";
@@ -53,35 +57,21 @@ var keycapEdge = "#1affffff";
 var keycapFill = "#0fffffff";
 var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
-// A thumbnail's frame is nearly black, which reads as a window showing
-// something. A marker shows less, so it is a plain grey under its colours.
-var thumbEdge = "#1affffff";
-var thumbFill = "#40000000";
-var markerEdge = "#24ffffff";
-var markerFill = "#338f98ac";
-var divider = "#17ffffff";
+var cardEdge = "#1affffff";
+var cardFill = "#40000000";
+// Initials, for an application the icon theme has nothing for.
+var monogramFill = "#338f98ac";
 
-// The applications with nothing open and the key hints are worth a glance,
-// and neither is worth the eye the windows themselves are worth.
+// The key hints are worth a glance, and no more.
 var faint = 0.4;
+// An application with nothing open, which is there for its key.
+var closed = 0.35;
 // An icon standing in for a window that has no picture yet.
 var standin = 0.35;
-// How strongly a window shows through its marker: enough to recognise it by,
-// and little enough for the marker's title to stay readable on top of it.
-var markerShows = 0.45;
-// How far a marker's window is blurred, at most.
-var blur = 40;
-// And how much it is brightened and saturated, so that its colours read.
-var markerLift = 0.15;
-var markerColour = 0.5;
 
 // Every movement takes this long, on the curve Hyprland moves its own
 // windows and layers on.
-var duration = 180;
-
-function lerp(from, to, through) {
-    return from + (to - from) * through;
-}
+var duration = 220;
 
 function clamp(value, lowest, highest) {
     return Math.max(lowest, Math.min(highest, value));

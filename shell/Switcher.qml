@@ -1,5 +1,9 @@
-// The panel: what the switch is for and the keys that steer it, then every
-// application's windows, then the applications with nothing open.
+// The panel: what the switch is for and the keys that steer it, then the
+// applications, then the windows of the one being switched to.
+//
+// It is one size for as long as the switcher is open. Switching to another
+// application moves the highlight along the applications and slides their
+// windows along with it; nothing changes size.
 
 pragma ComponentBehavior: Bound
 
@@ -31,37 +35,29 @@ Item {
         return wanted !== "" && Qt.fontFamilies().includes(wanted) ? wanted : "monospace";
     }
     readonly property int contentWidth: resolve(settings.width, screenWidth)
-    readonly property int maxContentHeight: resolve(settings.maxHeight, screenHeight)
-    readonly property int chromeHeight: Theme.padTop + title.implicitHeight + Theme.titleGap + Theme.padBottom
+    readonly property int maxHeight: resolve(settings.maxHeight, screenHeight)
 
-    // The window is as big as the panel can ever get, with room around it
-    // for the shadow, so that it never has to change size.
-    readonly property int surfaceWidth: Math.min(screenWidth, contentWidth + 2 * Theme.padSide + 2 * Theme.margin)
-    readonly property int surfaceHeight: Math.min(screenHeight, chromeHeight + maxContentHeight + 2 * Theme.margin)
+    // Everything in the panel but the windows.
+    readonly property real chrome: Theme.padTop + title.implicitHeight + Theme.headingGap + bar.implicitHeight + Theme.barGap + Theme.padBottom
+    // The room a window's title takes under its picture.
+    readonly property real titleSpace: Theme.titleTop + titles.height
+    // How tall a window's picture is: as tall as configured, unless that
+    // would make the panel taller than it may be.
+    readonly property int tall: Math.max(48, Math.min(settings.previewHeight, maxHeight - chrome - 2 * Theme.cardPad - titleSpace))
 
-    // Every row's name takes the same width, so the windows all start in the
-    // same place however long the applications are called. Measured the way
-    // GTK measures a label's width in characters.
-    readonly property real nameWidth: Math.ceil(Math.max(names.averageCharacterWidth, names.advanceWidth("0")) * Theme.nameChars)
-    readonly property real headerWidth: {
-        let widest = 0;
+    // The window is exactly as big as the panel and its shadow.
+    readonly property int surfaceWidth: Math.min(screenWidth, panel.width + 2 * Theme.margin)
+    readonly property int surfaceHeight: Math.min(screenHeight, panel.height + 2 * Theme.margin)
 
-        for (let i = 0; i < rowRepeater.count; i++) {
-            const row = rowRepeater.itemAt(i);
-
-            if (row)
-                widest = Math.max(widest, row.headerImplicitWidth);
-        }
-
-        return widest;
-    }
-
-    // The rows by the application they are for, and the order they go in.
-    // The order only changes when the applications do, so a switch keeps
-    // every row it had and moves it, rather than building them all again.
-    property var rowIds: []
+    // The open applications by the app id they are known by, and the order
+    // they go in, which only changes when the applications do: a switch moves
+    // things along rather than building them again.
+    property var openIds: []
     property var rows: ({})
-    property var absent: []
+    property var closed: []
+
+    // Which of them the switch is on.
+    readonly property int page: openIds.indexOf(scene?.target ?? "")
 
     onSceneChanged: {
         if (!scene)
@@ -69,8 +65,8 @@ Item {
 
         const ids = scene.rows.map(row => row.appId);
 
-        if (!same(ids, rowIds))
-            rowIds = ids;
+        if (!same(ids, openIds))
+            openIds = ids;
 
         const byId = {};
 
@@ -79,10 +75,10 @@ Item {
 
         rows = byId;
 
-        const chips = scene.absent.map(chip => chip.key + "\n" + chip.name);
+        const keys = scene.absent.map(chip => chip.key + "\n" + chip.name);
 
-        if (!same(chips, absent.map(chip => chip.key + "\n" + chip.name)))
-            absent = scene.absent;
+        if (!same(keys, closed.map(chip => chip.key + "\n" + chip.name)))
+            closed = scene.absent;
     }
 
     function same(these, those) {
@@ -108,11 +104,10 @@ Item {
     }
 
     FontMetrics {
-        id: names
+        id: titles
 
         font.family: switcher.family
-        font.pixelSize: 11
-        font.weight: Font.Bold
+        font.pixelSize: 12
     }
 
     RectangularShadow {
@@ -128,7 +123,7 @@ Item {
 
         anchors.centerIn: parent
         width: switcher.contentWidth + 2 * Theme.padSide
-        height: Theme.padTop + title.implicitHeight + Theme.titleGap + strip.height + Theme.padBottom
+        height: switcher.chrome + strip.height
         radius: Theme.panelRadius
         color: Theme.panel
         border.width: 1
@@ -195,143 +190,67 @@ Item {
             }
         }
 
-        Flickable {
+        AppBar {
+            id: bar
+
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: Theme.padTop + title.implicitHeight + Theme.headingGap
+            openIds: switcher.openIds
+            rows: switcher.rows
+            closed: switcher.closed
+            current: switcher.scene?.target ?? ""
+            icons: switcher.settings.icons
+            animate: switcher.animate
+            family: switcher.family
+            mono: switcher.mono
+        }
+
+        // The windows, an application's at a time. Every open application's
+        // windows wait side by side in the order of the applications above,
+        // and slide past along with the highlight there.
+        Item {
             id: strip
 
-            readonly property real overflow: column.implicitHeight - height
-
             x: Theme.padSide
-            y: Theme.padTop + title.implicitHeight + Theme.titleGap
+            y: bar.y + bar.height + Theme.barGap
             width: switcher.contentWidth
-            height: Math.min(column.implicitHeight, switcher.maxContentHeight)
-            contentWidth: width
-            contentHeight: column.implicitHeight
-            interactive: false
-            clip: overflow > 0
-            contentY: Theme.lerp(switcher.fromY, switcher.scrollFor(switcher.targetRow), switcher.glide)
+            height: 2 * Theme.cardPad + switcher.tall + switcher.titleSpace
+            clip: true
 
-            Column {
-                id: column
+            Row {
+                x: -Math.max(0, switcher.page) * (strip.width + Theme.pageGap)
+                spacing: Theme.pageGap
 
-                width: strip.width
-                spacing: Theme.rowGap
+                Behavior on x {
+                    enabled: switcher.animate
+
+                    NumberAnimation {
+                        duration: Theme.duration
+                        easing.type: Easing.OutQuint
+                    }
+                }
 
                 Repeater {
-                    id: rowRepeater
+                    model: switcher.openIds
 
-                    model: switcher.rowIds
-
-                    AppRow {
+                    WindowPage {
                         required property string modelData
 
-                        width: column.width
-                        row: switcher.rows[modelData] ?? null
-                        open: switcher.scene?.target === modelData
+                        width: strip.width
+                        height: strip.height
+                        windows: switcher.rows[modelData]?.windows ?? []
+                        icons: switcher.rows[modelData]?.icons ?? []
+                        current: switcher.scene?.target === modelData
                         selected: switcher.selected
-                        settings: switcher.settings
+                        tall: switcher.tall
+                        previews: switcher.settings.previews
                         capturing: switcher.capturing
                         animate: switcher.animate
                         family: switcher.family
-                        mono: switcher.mono
-                        nameWidth: switcher.nameWidth
-                        headerWidth: switcher.headerWidth
-                    }
-                }
-
-                // A line to say that what is below it is a different kind of
-                // thing: keys for what could be opened, rather than windows
-                // that are.
-                Item {
-                    width: column.width
-                    height: 13
-                    visible: switcher.rowIds.length > 0 && switcher.absent.length > 0
-
-                    Rectangle {
-                        y: 10
-                        width: parent.width
-                        height: 1
-                        color: Theme.divider
-                    }
-                }
-
-                // Applications with nothing open share one line between them:
-                // they are there so that their keys can be seen, which takes
-                // a name and no more. Whatever doesn't fit is cut off.
-                Item {
-                    width: column.width
-                    height: chips.implicitHeight + 2 * Theme.rowPad
-                    visible: switcher.absent.length > 0
-                    clip: true
-                    opacity: Theme.faint
-
-                    Row {
-                        id: chips
-
-                        y: Theme.rowPad
-                        spacing: 14
-
-                        Repeater {
-                            model: switcher.absent
-
-                            Header {
-                                required property var modelData
-
-                                key: modelData.key
-                                icons: modelData.icons
-                                name: modelData.name
-                                showIcon: switcher.settings.icons
-                                family: switcher.family
-                                mono: switcher.mono
-                            }
-                        }
                     }
                 }
             }
         }
-    }
-
-    // When there are more rows than fit, the strip keeps the one being
-    // switched to in view, gliding from wherever it was when the switch
-    // moved to another application.
-    readonly property Item targetRow: {
-        rowRepeater.count;
-        const index = rowIds.indexOf(scene?.target ?? "");
-
-        return index >= 0 ? rowRepeater.itemAt(index) : null;
-    }
-    property Item heldRow: null
-    property real fromY: 0
-    property real glide: 1
-
-    function scrollFor(row) {
-        if (!row || strip.overflow <= 0)
-            return 0;
-
-        return Theme.clamp(row.y + row.height / 2 - strip.height / 2, 0, strip.overflow);
-    }
-
-    onTargetRowChanged: {
-        if (heldRow && targetRow && animate) {
-            fromY = Theme.lerp(fromY, scrollFor(heldRow), glide);
-            glide = 0;
-            gliding.restart();
-        } else {
-            gliding.stop();
-            glide = 1;
-        }
-
-        heldRow = targetRow;
-    }
-
-    NumberAnimation {
-        id: gliding
-
-        target: switcher
-        property: "glide"
-        from: 0
-        to: 1
-        duration: Theme.duration
-        easing.type: Easing.OutQuint
     }
 
     // One key and what it does.
