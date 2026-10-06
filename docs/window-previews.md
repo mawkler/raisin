@@ -36,22 +36,16 @@ focused window can wait on it.
 - **Finding the window.** The daemon sends each window's Hyprland address. The view looks it up
   among Quickshell's `Hyprland.toplevels` and captures `toplevel.wayland`. Hyprland's IPC writes an
   address with `0x` in front and Quickshell without, so the view drops it before comparing.
-- **Thumbnails are live** while their application is the one being switched to, so a video or a
-  terminal keeps moving in the switcher.
-- **Markers are not.** Every other window is a line-tall slice through the middle of its own
-  window, blurred, lifted a little and laid faintly over the panel, so that it is recognisable by
-  its colours while its title stays readable on top. A marker is captured once each time the
-  switcher appears: a slice that small and that blurred doesn't change enough to be worth keeping
-  live.
+- **Only the application being switched to is live**, so a video or a terminal keeps moving in the
+  switcher. Every other open application's windows wait beside it, out of view, and are captured
+  once each time the switcher appears: switching to one shows its windows as they are now
+  straight away, and they turn live from there.
 - **Captures start a frame late.** The switcher is drawn first, with whatever each window last
   showed, and captures start once it is on screen. Starting them with it held the first frame up
   by about 100 ms.
-- **The blur goes on an item around the capture.** A `ScreencopyView` that is itself made a layer,
+- **Effects go on an item around a capture.** A `ScreencopyView` that is itself made a layer,
   which every effect needs, draws nothing at all into it. Wrapped in an item that is the layer, it
   draws as usual.
-- **A handover is the frame growing.** A marker and its thumbnail are the same width; opening a row
-  is its frames growing from a line to a thumbnail tall, uncovering the whole window as the blur
-  clears.
 
 ## What can go wrong
 
@@ -59,6 +53,6 @@ focused window can wait on it.
 | --- | --- |
 | Quickshell isn't installed | No overlay at all. The keys still switch, and the daemon says why at startup. |
 | A window hasn't been drawn since it was last visible | Whatever it last drew, which is what every other switcher shows too. |
-| A capture takes longer than the switch | The tile keeps its application's icon; the switch is unaffected. |
+| A capture takes longer than the switch | The window shows its application's icon until it arrives; the switch is unaffected. |
 | A window positioned entirely off the monitor | Its application's icon instead. Hyprland copies a window only while its box overlaps the monitor being rendered. Windows on hidden workspaces usually still overlap by a sliver and do capture. |
 | The view crashes | The daemon starts it again, waiting longer each time it fails in a row, and catches it up on the switch in progress when it reconnects. |

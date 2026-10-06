@@ -24,15 +24,17 @@ along). Start the daemon once, for example from your Hyprland startup configurat
 exec-once = raisin daemon
 ```
 
+![The switcher open on Neovide: the applications in a bar, each with its key and a dot per open window, and Neovide's two windows below with the one it would switch to highlighted](docs/switcher.png)
+
 It binds `Super` + a letter for every application in `[keys.apps]`, so adding another letter is a
 line of configuration — no compositor configuration to edit, and no restart.
 
 - Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
-- Keep `Super` held a moment longer and the switcher appears: a row per application you gave a key
-  to, with the one you'd get highlighted. The application you're switching to shows its windows
-  live; the others show a marker per window, a blurred slice of the window it stands for, and the
-  ones with nothing open share a line so their keys are still to hand. Applications you haven't
-  given a key to are left out.
+- Keep `Super` held a moment longer and the switcher appears: every application you gave a key to,
+  in a bar with its key under it and a dot per open window, and below that the windows of the one
+  you'd get, live, with the one you'd land on highlighted. Applications with nothing open sit
+  faintly at the end of the bar so their keys are still to hand; applications you haven't given a
+  key to are left out.
 - Press the same letter again to cycle through that application's windows, press another mapped
   letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
   cancel.
@@ -74,12 +76,12 @@ w = { cmd = "brave", app_id = "brave-browser" } # when the window class differs
 [switcher]
 delay = 90         # milliseconds Super has to stay held before the switcher appears
 width = "50%"      # of the screen, or a number of pixels like 900
-max_height = "40%"
-icons = true       # show each application's icon beside its name
+max_height = "40%" # thumbnails shrink to keep the switcher within this
+icons = true       # show each application's icon, rather than its initials
 
 [previews]
 enabled = true # show what each window looks like
-height = 105   # pixels tall; every thumbnail is, and the width follows the window
+height = 150   # pixels tall; every thumbnail is, and the width follows the window
 
 # What to call an application, by the window class it uses. Optional: the name
 # comes from the application's desktop entry otherwise.
