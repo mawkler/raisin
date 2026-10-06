@@ -16,8 +16,9 @@ Currently supports [Niri](https://github.com/YaLTeR/niri) and [Hyprland](https:/
 
 ## The switcher
 
-On Hyprland, raisin can show an Alt-Tab style overlay while you hold `Super`. Start it once, for
-example from your Hyprland startup configuration:
+On Hyprland, raisin can show an Alt-Tab style overlay while you hold `Super`. The overlay is drawn
+by [Quickshell](https://quickshell.org), which has to be installed (the Nix package brings it
+along). Start the daemon once, for example from your Hyprland startup configuration:
 
 ```
 exec-once = raisin daemon
@@ -28,10 +29,10 @@ line of configuration — no compositor configuration to edit, and no restart.
 
 - Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
 - Keep `Super` held a moment longer and the switcher appears: a row per application you gave a key
-  to, with the one you'd get highlighted. The application you're switching to shows what its
-  windows currently look like; the others show a marker per window, and the ones with nothing open
-  share a line so their keys are still to hand. Applications you haven't given a key to are left
-  out.
+  to, with the one you'd get highlighted. The application you're switching to shows its windows
+  live; the others show a marker per window, a blurred slice of the window it stands for, and the
+  ones with nothing open share a line so their keys are still to hand. Applications you haven't
+  given a key to are left out.
 - Press the same letter again to cycle through that application's windows, press another mapped
   letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
   cancel.
@@ -43,6 +44,9 @@ holding `Super` to pick a window.
 
 `raisin switch <app>` does the same thing from a keybinding of your own, and says so plainly if the
 switcher isn't running.
+
+Without Quickshell the daemon still binds the keys and switches windows, and says at startup that
+there's nothing to draw the overlay with.
 
 ## Configuration
 
@@ -148,6 +152,17 @@ systemd: `programs.hyprland.withUWSM = true` does that. Leaving `settings` out k
 ### Install with cargo
 
 `cargo install --git github:mawkler/raisin`
+
+The switcher also needs Quickshell's `qs` on your `PATH`.
+
+### Working on the switcher's look
+
+The overlay is the QML in `shell/`, built into the binary. To run the daemon on the files in a
+checkout instead, so that Quickshell reloads them every time one is saved:
+
+```
+RAISIN_SHELL=$PWD/shell raisin daemon
+```
 
 ## Usage
 
