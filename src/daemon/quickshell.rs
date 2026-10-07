@@ -29,6 +29,7 @@ const SHELL: &[(&str, &str)] = &[
     ("Theme.js", include_str!("../../shell/Theme.js")),
     ("Switcher.qml", include_str!("../../shell/Switcher.qml")),
     ("AppBar.qml", include_str!("../../shell/AppBar.qml")),
+    ("Sheet.qml", include_str!("../../shell/Sheet.qml")),
     ("WindowPage.qml", include_str!("../../shell/WindowPage.qml")),
     ("WindowCard.qml", include_str!("../../shell/WindowCard.qml")),
     ("Keycap.qml", include_str!("../../shell/Keycap.qml")),

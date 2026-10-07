@@ -1,9 +1,13 @@
-// The panel: what the switch is for and the keys that steer it, then the
-// applications, then the windows of the one being switched to.
+// The panel: what the switch is for, then the applications, then a sheet with
+// the windows of the one being switched to.
+//
+// Choosing is two steps, an application and then one of its windows, and the
+// panel is drawn to say so: the application sits in a tab that the sheet of
+// its windows hangs from, and only the window is marked in colour.
 //
 // It is one size for as long as the switcher is open. Switching to another
-// application moves the highlight along the applications, and its windows
-// grow out from under it as the last one's go back; nothing changes size.
+// application slides the tab along the applications, and its windows grow out
+// from under it as the last one's go back; nothing changes size.
 
 pragma ComponentBehavior: Bound
 
@@ -38,7 +42,7 @@ Item {
     readonly property int maxHeight: resolve(settings.maxHeight, screenHeight)
 
     // Everything in the panel but the windows.
-    readonly property real chrome: Theme.padTop + title.implicitHeight + Theme.headingGap + bar.implicitHeight + Theme.barGap + Theme.padBottom
+    readonly property real chrome: Theme.padTop + title.implicitHeight + Theme.headingGap + bar.implicitHeight + Theme.barGap + Theme.sheetPadTop + Theme.hintGap + hints.height + Theme.sheetPadBottom + Theme.sheetInset
     // The room a window's title takes under its picture.
     readonly property real titleSpace: Theme.titleTop + titles.height
     // How tall a window's picture is: as tall as configured, unless that
@@ -55,6 +59,9 @@ Item {
     property var openIds: []
     property var rows: ({})
     property var closed: []
+
+    // Which of the switch's application's windows it would land on.
+    readonly property int selectedIndex: (rows[scene?.target ?? ""]?.windows ?? []).findIndex(window => window.id === selected)
 
     onSceneChanged: {
         if (!scene)
@@ -120,15 +127,15 @@ Item {
 
         anchors.centerIn: parent
         width: switcher.contentWidth + 2 * Theme.padSide
-        height: switcher.chrome + strip.height
+        height: hints.y + hints.height + Theme.sheetPadBottom + Theme.sheetInset
         radius: Theme.panelRadius
         color: Theme.panel
         border.width: 1
         border.color: Theme.panelEdge
 
-        // What the switch is for, the window it would land on, and the keys
-        // that steer it — which are nearly the same every time, so they sit
-        // at the end of the line where the eye passes over them.
+        // Where the switch is, as a path: the application, then the window
+        // it would land on. The key that cancels it sits at the end of the
+        // line, where the eye passes over it.
         RowLayout {
             id: title
 
@@ -138,11 +145,18 @@ Item {
             spacing: 8
 
             Text {
-                text: "Switch to " + (switcher.scene?.name ?? "")
+                text: switcher.scene?.name ?? ""
                 color: Theme.heading
                 font.family: switcher.family
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
+            }
+
+            Text {
+                text: "›"
+                color: Theme.muted
+                font.family: switcher.family
+                font.pixelSize: 15
             }
 
             Text {
@@ -155,36 +169,29 @@ Item {
                 elide: Text.ElideRight
             }
 
-            Row {
-                leftPadding: 6
-                spacing: 12
+            Hint {
+                Layout.leftMargin: 6
+                key: switcher.settings.cancelKey
+                says: "cancel"
+                family: switcher.family
+                mono: switcher.mono
                 opacity: Theme.faint
-
-                // The application's own key walks its windows, and Shift
-                // with it walks them the other way.
-                Hint {
-                    key: switcher.scene?.cycleKey ?? ""
-                    says: "next"
-                    family: switcher.family
-                    mono: switcher.mono
-                    visible: key !== ""
-                }
-
-                Hint {
-                    key: switcher.scene?.cycleKey ? "Shift + " + switcher.scene.cycleKey : ""
-                    says: "previous"
-                    family: switcher.family
-                    mono: switcher.mono
-                    visible: key !== ""
-                }
-
-                Hint {
-                    key: switcher.settings.cancelKey
-                    says: "cancel"
-                    family: switcher.family
-                    mono: switcher.mono
-                }
             }
+        }
+
+        // The application being switched to sits in a tab, and its windows
+        // on a sheet that the tab is part of. Behind the applications, so
+        // that the tab is too.
+        Sheet {
+            anchors.fill: parent
+            sheetX: Theme.sheetInset
+            sheetY: bar.y + bar.height + Theme.barGap
+            sheetWidth: panel.width - 2 * Theme.sheetInset
+            sheetHeight: hints.y + hints.height + Theme.sheetPadBottom - sheetY
+            tabX: bar.x + bar.tabX - Theme.cellGap / 2
+            tabWidth: Theme.cellSize + Theme.cellGap
+            tabTop: bar.y - Theme.tabRise
+            tabbed: bar.tabbed
         }
 
         AppBar {
@@ -196,24 +203,11 @@ Item {
             rows: switcher.rows
             closed: switcher.closed
             current: switcher.scene?.target ?? ""
+            selectedIndex: switcher.selectedIndex
             icons: switcher.settings.icons
             animate: switcher.animate
             family: switcher.family
             mono: switcher.mono
-        }
-
-        // A faint light under the application being switched to, so that
-        // its windows read as hanging from it. It rides on the highlight
-        // above rather than moving by itself, so the two never part.
-        RectangularShadow {
-            x: bar.x + bar.highlightCentre - width / 2
-            y: strip.y - height / 2
-            width: Theme.glowWidth
-            height: Theme.glowHeight
-            radius: height / 2
-            blur: Theme.glowBlur
-            color: Theme.glow
-            visible: bar.highlighting
         }
 
         // The windows, an application's at a time. Every open application's
@@ -223,7 +217,7 @@ Item {
             id: strip
 
             x: Theme.padSide
-            y: bar.y + bar.height + Theme.barGap
+            y: bar.y + bar.height + Theme.barGap + Theme.sheetPadTop
             width: switcher.contentWidth
             height: 2 * Theme.cardPad + switcher.tall + switcher.titleSpace
             clip: true
@@ -276,6 +270,35 @@ Item {
                     animate: switcher.animate
                     family: switcher.family
                 }
+            }
+        }
+
+        // The keys that walk the windows, with the windows: the application's
+        // own key, and Shift with it the other way. Kept in place without
+        // one, so that the panel stays the same size.
+        Row {
+            id: hints
+
+            readonly property string key: switcher.scene?.cycleKey ?? ""
+
+            x: strip.x + strip.width - width - Theme.cardPad
+            y: strip.y + strip.height + Theme.hintGap
+            height: implicitHeight
+            spacing: 12
+            opacity: key !== "" ? Theme.faint : 0
+
+            Hint {
+                key: hints.key || " "
+                says: "next"
+                family: switcher.family
+                mono: switcher.mono
+            }
+
+            Hint {
+                key: "Shift + " + (hints.key || " ")
+                says: "previous"
+                family: switcher.family
+                mono: switcher.mono
             }
         }
     }

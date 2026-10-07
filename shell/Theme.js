@@ -12,10 +12,24 @@ var padSide = 20;
 var padBottom = 16;
 var titleInset = 4;
 
-// Top to bottom: the heading line, the applications, and the windows of the
-// one being switched to.
+// Top to bottom: the heading line, the applications, and the sheet holding
+// the windows of the one being switched to.
 var headingGap = 18;
 var barGap = 16;
+
+// The sheet, and the tab joining it to the application being switched to.
+// It is the panel less this all round, with corners that nest inside the
+// panel's.
+var sheetInset = 12;
+var sheetRadius = 10;
+var sheetPadTop = 4;
+var sheetPadBottom = 8;
+// How far the tab reaches above its application's cell, and how round the
+// corners are where it meets the sheet.
+var tabRise = 6;
+var fillet = 10;
+// Between the windows and the keys that walk them.
+var hintGap = 2;
 
 // The applications: a cell each, with a dot per open window under the icon
 // and the key that reaches it under the cell.
@@ -41,10 +55,6 @@ var highlightRadius = 14;
 // How big an application's windows are while they're away: they grow to full
 // size out of its icon, and shrink back into it.
 var pageGrow = 0.92;
-// The light under the application being switched to.
-var glowWidth = 240;
-var glowHeight = 36;
-var glowBlur = 64;
 // How much of the next window shows past the highlighted one, when they
 // don't all fit.
 var peek = 40;
@@ -60,9 +70,15 @@ var selectedText = "#ffffff";
 var keycapText = "#b7bfd0";
 var keycapEdge = "#1affffff";
 var keycapFill = "#0fffffff";
+// The window a switch would land on, and nothing else: the application is
+// marked by the tab, so that the two never look like the same kind of thing.
 var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
-var glow = "#3386a4ff";
+var sheetFill = "#ff20232b";
+var sheetEdge = "#12ffffff";
+// The dot of the window a switch would land on, and its application's others.
+var dotLit = "#eef1f7";
+var dotDim = "#5c6478";
 var cardEdge = "#1affffff";
 var cardFill = "#40000000";
 // Initials, for an application the icon theme has nothing for.

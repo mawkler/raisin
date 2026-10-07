@@ -1,6 +1,7 @@
 // The applications: the open ones first, each with a dot per window under its
-// icon and its key under that, then the ones with nothing open, faintly. A
-// highlight slides to whichever one the switch is on.
+// icon and its key under that, then the ones with nothing open, faintly. The
+// one the switch is on sits in a tab, which the switcher draws behind the bar
+// so that it can join the sheet below; this says where it is.
 
 pragma ComponentBehavior: Bound
 
@@ -17,8 +18,9 @@ Item {
     required property var rows
     // The applications with nothing open.
     required property var closed
-    // The application the switch is on.
+    // The application the switch is on, and which of its windows.
     required property string current
+    required property int selectedIndex
     required property bool icons
     required property bool animate
     required property string family
@@ -27,10 +29,20 @@ Item {
     implicitWidth: cells.implicitWidth
     implicitHeight: cells.implicitHeight
 
-    // Where the highlight's middle is right now, on its way or not, and
-    // whether there is one.
-    readonly property real highlightCentre: highlight.x + Theme.cellSize / 2
-    readonly property bool highlighting: highlight.visible
+    // Where the tab is: the left edge of the cell of the application being
+    // switched to, gliding from one cell to the next.
+    readonly property Item currentCell: cellOf(current)
+    readonly property bool tabbed: currentCell !== null
+    property real tabX: currentCell?.x ?? 0
+
+    Behavior on tabX {
+        enabled: bar.animate
+
+        NumberAnimation {
+            duration: Theme.duration
+            easing.type: Easing.OutQuint
+        }
+    }
 
     // An open application's cell, or nothing when it isn't one.
     function cellOf(appId) {
@@ -45,31 +57,6 @@ Item {
         const cell = cellOf(appId);
 
         return cell ? cell.x + Theme.cellSize / 2 : width / 2;
-    }
-
-    // Behind the application being switched to.
-    Rectangle {
-        id: highlight
-
-        readonly property Item cell: bar.cellOf(bar.current)
-
-        x: cell?.x ?? 0
-        width: Theme.cellSize
-        height: Theme.cellSize
-        radius: Theme.cellRadius
-        color: Theme.selection
-        border.width: 1
-        border.color: Theme.selectionEdge
-        visible: cell !== null
-
-        Behavior on x {
-            enabled: bar.animate
-
-            NumberAnimation {
-                duration: Theme.duration
-                easing.type: Easing.OutQuint
-            }
-        }
     }
 
     Row {
@@ -90,6 +77,7 @@ Item {
                 icons: row?.icons ?? []
                 name: row?.name ?? ""
                 windows: row?.windows.length ?? 0
+                lit: modelData === bar.current ? Math.min(bar.selectedIndex, Theme.dots - 1) : -1
                 showIcon: bar.icons
                 family: bar.family
                 mono: bar.mono
@@ -137,6 +125,9 @@ Item {
         property var icons: []
         property string name
         property int windows
+        // Which dot belongs to the window a switch would land on, when this
+        // is the application it is on.
+        property int lit: -1
         property bool showIcon: true
         property string family
         property string mono
@@ -188,10 +179,12 @@ Item {
                     model: Math.min(cell.windows, Theme.dots)
 
                     Rectangle {
+                        required property int index
+
                         width: Theme.dotSize
                         height: width
                         radius: width / 2
-                        color: Theme.text
+                        color: cell.lit < 0 ? Theme.text : index === cell.lit ? Theme.dotLit : Theme.dotDim
                     }
                 }
             }
