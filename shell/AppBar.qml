@@ -84,21 +84,6 @@ Item {
             }
         }
 
-        // Between the applications that are open and the ones that aren't.
-        Item {
-            width: Theme.dotSize + 2 * Theme.dividerGap
-            height: Theme.cellSize
-            visible: bar.openIds.length > 0 && bar.closed.length > 0
-
-            Rectangle {
-                anchors.centerIn: parent
-                width: Theme.dotSize
-                height: width
-                radius: width / 2
-                color: Theme.muted
-            }
-        }
-
         Repeater {
             model: bar.closed
 
@@ -184,7 +169,7 @@ Item {
                         width: Theme.dotSize
                         height: width
                         radius: width / 2
-                        color: cell.lit < 0 ? Theme.text : index === cell.lit ? Theme.dotLit : Theme.dotDim
+                        color: index === cell.lit ? Theme.dotLit : Theme.dotDim
                     }
                 }
             }

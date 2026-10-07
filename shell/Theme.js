@@ -42,8 +42,6 @@ var dotGap = 3;
 // At most this many dots, however many windows there are.
 var dots = 4;
 var keyTop = 6;
-// The room either side of the dot between open applications and closed ones.
-var dividerGap = 8;
 
 // The windows of the application being switched to.
 var cardRadius = 8;
@@ -59,7 +57,9 @@ var pageGrow = 0.92;
 // don't all fit.
 var peek = 40;
 
-var panel = "#f715171c";
+// The panel is grey, and the tab and the sheet of windows hanging from it are
+// set into it, darker, the way a selected tab is.
+var panel = "#f720232b";
 var panelEdge = "#14ffffff";
 var shadow = "#8c000000";
 var heading = "#eef1f7";
@@ -74,9 +74,9 @@ var keycapFill = "#0fffffff";
 // marked by the tab, so that the two never look like the same kind of thing.
 var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
-var sheetFill = "#ff20232b";
-var sheetEdge = "#12ffffff";
-// The dot of the window a switch would land on, and its application's others.
+var sheetFill = "#ff121419";
+var sheetEdge = "#0affffff";
+// The dot of the window a switch would land on, and every other window's.
 var dotLit = "#eef1f7";
 var dotDim = "#5c6478";
 var cardEdge = "#1affffff";
