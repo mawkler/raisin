@@ -37,7 +37,7 @@ focused window can wait on it.
   among Quickshell's `Hyprland.toplevels` and captures `toplevel.wayland`. Hyprland's IPC writes an
   address with `0x` in front and Quickshell without, so the view drops it before comparing.
 - **Only the application being switched to is live**, so a video or a terminal keeps moving in the
-  switcher. Every other open application's windows wait beside it, out of view, and are captured
+  switcher. Every other open application's windows wait beneath it, hidden, and are captured
   once each time the switcher appears: switching to one shows its windows as they are now
   straight away, and they turn live from there.
 - **Captures start a frame late.** The switcher is drawn first, with whatever each window last

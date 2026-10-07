@@ -38,8 +38,9 @@ var cardPad = 8;
 var cardGap = 4;
 var titleTop = 6;
 var highlightRadius = 14;
-// Between one application's windows and the next one's as they slide past.
-var pageGap = 48;
+// How big an application's windows are while they're away: they grow to full
+// size out of its icon, and shrink back into it.
+var pageGrow = 0.92;
 // How much of the next window shows past the highlighted one, when they
 // don't all fit.
 var peek = 40;

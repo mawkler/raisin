@@ -2,8 +2,8 @@
 // applications, then the windows of the one being switched to.
 //
 // It is one size for as long as the switcher is open. Switching to another
-// application moves the highlight along the applications and slides their
-// windows along with it; nothing changes size.
+// application moves the highlight along the applications, and its windows
+// grow out from under it as the last one's go back; nothing changes size.
 
 pragma ComponentBehavior: Bound
 
@@ -55,9 +55,6 @@ Item {
     property var openIds: []
     property var rows: ({})
     property var closed: []
-
-    // Which of them the switch is on.
-    readonly property int page: openIds.indexOf(scene?.target ?? "")
 
     onSceneChanged: {
         if (!scene)
@@ -206,8 +203,8 @@ Item {
         }
 
         // The windows, an application's at a time. Every open application's
-        // windows wait side by side in the order of the applications above,
-        // and slide past along with the highlight there.
+        // windows wait here, one on top of the other and all but one hidden,
+        // so that switching never has to build them again.
         Item {
             id: strip
 
@@ -217,37 +214,53 @@ Item {
             height: 2 * Theme.cardPad + switcher.tall + switcher.titleSpace
             clip: true
 
-            Row {
-                x: -Math.max(0, switcher.page) * (strip.width + Theme.pageGap)
-                spacing: Theme.pageGap
+            Repeater {
+                model: switcher.openIds
 
-                Behavior on x {
-                    enabled: switcher.animate
+                WindowPage {
+                    id: windowPage
 
-                    NumberAnimation {
-                        duration: Theme.duration
-                        easing.type: Easing.OutQuint
+                    required property string modelData
+
+                    // How far in this application's windows are: all the way
+                    // while the switch is on it, and gone otherwise. Hidden,
+                    // not taken away, so that they are still captured.
+                    property real shown: current ? 1 : 0
+
+                    Behavior on shown {
+                        enabled: switcher.animate
+
+                        NumberAnimation {
+                            duration: Theme.duration
+                            easing.type: Easing.OutQuint
+                        }
                     }
-                }
 
-                Repeater {
-                    model: switcher.openIds
-
-                    WindowPage {
-                        required property string modelData
-
-                        width: strip.width
-                        height: strip.height
-                        windows: switcher.rows[modelData]?.windows ?? []
-                        icons: switcher.rows[modelData]?.icons ?? []
-                        current: switcher.scene?.target === modelData
-                        selected: switcher.selected
-                        tall: switcher.tall
-                        previews: switcher.settings.previews
-                        capturing: switcher.capturing
-                        animate: switcher.animate
-                        family: switcher.family
+                    width: strip.width
+                    height: strip.height
+                    // Squared, so the windows going are nearly gone before
+                    // the ones coming are much there, rather than the two
+                    // showing through each other.
+                    opacity: shown * shown
+                    // They come out of the application's own icon and go back
+                    // into it, so they move a little towards it rather than
+                    // across the panel.
+                    transform: Scale {
+                        origin.x: bar.x + bar.centreOf(windowPage.modelData) - strip.x
+                        origin.y: 0
+                        xScale: Theme.pageGrow + (1 - Theme.pageGrow) * windowPage.shown
+                        yScale: xScale
                     }
+
+                    windows: switcher.rows[modelData]?.windows ?? []
+                    icons: switcher.rows[modelData]?.icons ?? []
+                    current: switcher.scene?.target === modelData
+                    selected: switcher.selected
+                    tall: switcher.tall
+                    previews: switcher.settings.previews
+                    capturing: switcher.capturing
+                    animate: switcher.animate
+                    family: switcher.family
                 }
             }
         }

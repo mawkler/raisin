@@ -27,14 +27,24 @@ Item {
     implicitWidth: cells.implicitWidth
     implicitHeight: cells.implicitHeight
 
+    // An open application's cell, or nothing when it isn't one.
+    function cellOf(appId) {
+        openRepeater.count;
+        const index = openIds.indexOf(appId);
+
+        return index >= 0 ? openRepeater.itemAt(index) : null;
+    }
+
+    // The middle of an open application's cell.
+    function centreOf(appId) {
+        const cell = cellOf(appId);
+
+        return cell ? cell.x + Theme.cellSize / 2 : width / 2;
+    }
+
     // Behind the application being switched to.
     Rectangle {
-        readonly property Item cell: {
-            openRepeater.count;
-            const index = bar.openIds.indexOf(bar.current);
-
-            return index >= 0 ? openRepeater.itemAt(index) : null;
-        }
+        readonly property Item cell: bar.cellOf(bar.current)
 
         x: cell?.x ?? 0
         width: Theme.cellSize

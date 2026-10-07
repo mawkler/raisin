@@ -108,6 +108,7 @@ Item {
 
                 NumberAnimation {
                     duration: Theme.duration
+                    easing.type: Easing.OutQuint
                 }
             }
         }
