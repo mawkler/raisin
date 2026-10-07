@@ -27,6 +27,11 @@ Item {
     implicitWidth: cells.implicitWidth
     implicitHeight: cells.implicitHeight
 
+    // Where the highlight's middle is right now, on its way or not, and
+    // whether there is one.
+    readonly property real highlightCentre: highlight.x + Theme.cellSize / 2
+    readonly property bool highlighting: highlight.visible
+
     // An open application's cell, or nothing when it isn't one.
     function cellOf(appId) {
         openRepeater.count;
@@ -44,6 +49,8 @@ Item {
 
     // Behind the application being switched to.
     Rectangle {
+        id: highlight
+
         readonly property Item cell: bar.cellOf(bar.current)
 
         x: cell?.x ?? 0

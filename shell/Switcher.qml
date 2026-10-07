@@ -202,6 +202,20 @@ Item {
             mono: switcher.mono
         }
 
+        // A faint light under the application being switched to, so that
+        // its windows read as hanging from it. It rides on the highlight
+        // above rather than moving by itself, so the two never part.
+        RectangularShadow {
+            x: bar.x + bar.highlightCentre - width / 2
+            y: strip.y - height / 2
+            width: Theme.glowWidth
+            height: Theme.glowHeight
+            radius: height / 2
+            blur: Theme.glowBlur
+            color: Theme.glow
+            visible: bar.highlighting
+        }
+
         // The windows, an application's at a time. Every open application's
         // windows wait here, one on top of the other and all but one hidden,
         // so that switching never has to build them again.

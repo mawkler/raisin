@@ -41,6 +41,10 @@ var highlightRadius = 14;
 // How big an application's windows are while they're away: they grow to full
 // size out of its icon, and shrink back into it.
 var pageGrow = 0.92;
+// The light under the application being switched to.
+var glowWidth = 240;
+var glowHeight = 36;
+var glowBlur = 64;
 // How much of the next window shows past the highlighted one, when they
 // don't all fit.
 var peek = 40;
@@ -58,6 +62,7 @@ var keycapEdge = "#1affffff";
 var keycapFill = "#0fffffff";
 var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
+var glow = "#3386a4ff";
 var cardEdge = "#1affffff";
 var cardFill = "#40000000";
 // Initials, for an application the icon theme has nothing for.
