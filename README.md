@@ -24,17 +24,17 @@ along). Start the daemon once, for example from your Hyprland startup configurat
 exec-once = raisin daemon
 ```
 
-![The switcher open on Neovide: the applications in a bar, each with its key and a dot per open window, and Neovide's two windows below with the one it would switch to highlighted](docs/switcher.png)
+![The switcher open on Brave: the applications in a bar, each with its key and a dot per open window, Brave in a tab joined to the sheet of its three windows, and the one it would switch to highlighted](docs/switcher.png)
 
 It binds `Super` + a letter for every application in `[keys.apps]`, so adding another letter is a
 line of configuration — no compositor configuration to edit, and no restart.
 
 - Tap `Super` + the letter and the window is focused immediately, with nothing on screen.
 - Keep `Super` held a moment longer and the switcher appears: every application you gave a key to,
-  in a bar with its key under it and a dot per open window, and below that the windows of the one
-  you'd get, live, with the one you'd land on highlighted. Applications with nothing open sit
-  faintly at the end of the bar so their keys are still to hand; applications you haven't given a
-  key to are left out.
+  in a bar with its key under it and a dot per open window. The one you'd get sits in a tab, and
+  its windows, live, lie on the sheet the tab is part of, with the one you'd land on highlighted.
+  Applications with nothing open sit faintly at the end of the bar so their keys are still to
+  hand; applications you haven't given a key to are left out.
 - Press the same letter again to cycle through that application's windows, press another mapped
   letter to switch to that application instead, release `Super` to confirm, or press `Esc` to
   cancel.
