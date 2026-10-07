@@ -22,7 +22,8 @@ var barGap = 16;
 // panel's.
 var sheetInset = 12;
 var sheetRadius = 10;
-var sheetPadTop = 4;
+// Under the keys at the bottom of the sheet. The room over the windows is
+// all of the room under them, keys included.
 var sheetPadBottom = 8;
 // How far the tab reaches above its application's cell, and how round the
 // corners are where it meets the sheet.

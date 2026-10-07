@@ -41,8 +41,11 @@ Item {
     readonly property int contentWidth: resolve(settings.width, screenWidth)
     readonly property int maxHeight: resolve(settings.maxHeight, screenHeight)
 
+    // The room on the sheet under the windows, with the keys that walk them,
+    // and as much again over them, so that they sit in the middle of it.
+    readonly property real sheetRoom: Theme.hintGap + hints.height + Theme.sheetPadBottom
     // Everything in the panel but the windows.
-    readonly property real chrome: Theme.padTop + title.implicitHeight + Theme.headingGap + bar.implicitHeight + Theme.barGap + Theme.sheetPadTop + Theme.hintGap + hints.height + Theme.sheetPadBottom + Theme.sheetInset
+    readonly property real chrome: Theme.padTop + title.implicitHeight + Theme.headingGap + bar.implicitHeight + Theme.barGap + 2 * sheetRoom + Theme.sheetInset
     // The room a window's title takes under its picture.
     readonly property real titleSpace: Theme.titleTop + titles.height
     // How tall a window's picture is: as tall as configured, unless that
@@ -217,7 +220,7 @@ Item {
             id: strip
 
             x: Theme.padSide
-            y: bar.y + bar.height + Theme.barGap + Theme.sheetPadTop
+            y: bar.y + bar.height + Theme.barGap + switcher.sheetRoom
             width: switcher.contentWidth
             height: 2 * Theme.cardPad + switcher.tall + switcher.titleSpace
             clip: true
