@@ -57,9 +57,7 @@ var pageGrow = 0.92;
 // don't all fit.
 var peek = 40;
 
-// The panel is grey, and the tab and the sheet of windows hanging from it are
-// set into it, darker, the way a selected tab is.
-var panel = "#f720232b";
+var panel = "#f715171c";
 var panelEdge = "#14ffffff";
 var shadow = "#8c000000";
 var heading = "#eef1f7";
@@ -74,8 +72,8 @@ var keycapFill = "#0fffffff";
 // marked by the tab, so that the two never look like the same kind of thing.
 var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
-var sheetFill = "#ff121419";
-var sheetEdge = "#0affffff";
+var sheetFill = "#ff20232b";
+var sheetEdge = "#12ffffff";
 // The dot of the window a switch would land on, and every other window's.
 var dotLit = "#eef1f7";
 var dotDim = "#5c6478";
