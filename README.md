@@ -24,7 +24,7 @@ along). Start the daemon once, for example from your Hyprland startup configurat
 exec-once = raisin daemon
 ```
 
-![The switcher open on Brave: the applications in a bar, each with its key and a dot per open window, Brave in a tab joined to the sheet of its three windows, and the one it would switch to highlighted](docs/switcher.png)
+![The switcher open on Brave: the applications in a bar, each with its key and a dot per open window, and Brave in a tab joined to the sheet holding its window, highlighted as the one it would switch to](docs/switcher.png)
 
 It binds `Super` + a letter for every application in `[keys.apps]`, so adding another letter is a
 line of configuration — no compositor configuration to edit, and no restart.
