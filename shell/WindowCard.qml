@@ -138,7 +138,7 @@ Item {
             enabled: card.animate
 
             ColorAnimation {
-                duration: Theme.duration
+                duration: Theme.cycle
             }
         }
     }

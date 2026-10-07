@@ -85,9 +85,9 @@ Item {
         model: page.windowIds
 
         highlightFollowsCurrentItem: true
-        highlightMoveDuration: page.animate ? Theme.duration : 0
+        highlightMoveDuration: page.animate ? Theme.cycle : 0
         highlightMoveVelocity: -1
-        highlightResizeDuration: page.animate ? Theme.duration : 0
+        highlightResizeDuration: page.animate ? Theme.cycle : 0
         highlightResizeVelocity: -1
         // Windows that don't fit scroll just far enough to keep the
         // highlighted one whole, with a little of the next one showing, so

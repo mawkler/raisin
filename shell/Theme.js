@@ -78,6 +78,9 @@ var standin = 0.35;
 // Every movement takes this long, on the curve Hyprland moves its own
 // windows and layers on.
 var duration = 220;
+// Except the highlight moving from one window to the next, which happens as
+// fast as the key is pressed and has to keep up with it.
+var cycle = 120;
 
 function clamp(value, lowest, highest) {
     return Math.max(lowest, Math.min(highest, value));
