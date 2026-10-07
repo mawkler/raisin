@@ -8,7 +8,6 @@ var margin = 72;
 
 var panelRadius = 20;
 var padTop = 18;
-var padSide = 20;
 var padBottom = 16;
 var titleInset = 4;
 
@@ -20,7 +19,11 @@ var barGap = 16;
 // The sheet, and the tab joining it to the application being switched to.
 // It is the panel less this all round, with corners that nest inside the
 // panel's.
-var sheetInset = 12;
+var sheetInset = 20;
+// The windows sit this far inside the sheet, and the heading lines up with
+// them.
+var sheetPadSide = 8;
+var padSide = sheetInset + sheetPadSide;
 var sheetRadius = 10;
 // Under the keys at the bottom of the sheet. The room over the windows is
 // all of the room under them, keys included.
