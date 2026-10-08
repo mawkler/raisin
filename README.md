@@ -50,6 +50,15 @@ switcher isn't running.
 Without Quickshell the daemon still binds the keys and switches windows, and says at startup that
 there's nothing to draw the overlay with.
 
+To blur whatever shows through the switcher, give its layer, `raisin`, a [layer
+rule](https://wiki.hypr.land/configuring/core/rules/layer-rules/) with `blur`, and with
+`ignore_alpha` so that the transparent margin around the panel, where its shadow falls, isn't
+blurred too. In a Lua configuration:
+
+```lua
+hl.layer_rule({ match = { namespace = "^raisin$" }, blur = true, ignore_alpha = 0.6 })
+```
+
 ## Configuration
 
 Raisin reads `$XDG_CONFIG_HOME/raisin/config.toml` — usually `~/.config/raisin/config.toml` — or
@@ -74,10 +83,12 @@ s = "spotify"
 w = { cmd = "brave", app_id = "brave-browser" } # when the window class differs
 
 [switcher]
-delay = 90         # milliseconds Super has to stay held before the switcher appears
-width = "50%"      # of the screen, or a number of pixels like 900
-max_height = "40%" # thumbnails shrink to keep the switcher within this
-icons = true       # show each application's icon, rather than its initials
+delay = 90                # milliseconds Super has to stay held before the switcher appears
+width = "50%"             # of the screen, or a number of pixels like 900
+max_height = "40%"        # thumbnails shrink to keep the switcher within this
+icons = true              # show each application's icon, rather than its initials
+background_opacity = 0.92 # how solid the panel is, from 0 (not at all) to 1
+foreground_opacity = 1    # and the sheet the windows lie on, with its tab
 
 [previews]
 enabled = true # show what each window looks like
