@@ -39,6 +39,9 @@ Item {
         return wanted !== "" && Qt.fontFamilies().includes(wanted) ? wanted : "monospace";
     }
     readonly property int contentWidth: resolve(settings.width, screenWidth)
+    // How solid the panel and the sheet on it are, as configured.
+    readonly property real backgroundOpacity: settings.backgroundOpacity ?? 1
+    readonly property real foregroundOpacity: settings.foregroundOpacity ?? 1
     readonly property int maxHeight: resolve(settings.maxHeight, screenHeight)
 
     // The room on the sheet under the windows, with the keys that walk them,
@@ -100,6 +103,12 @@ Item {
         return true;
     }
 
+    function withOpacity(colour, opacity) {
+        const solid = Qt.color(colour);
+
+        return Qt.rgba(solid.r, solid.g, solid.b, opacity);
+    }
+
     function resolve(length, screen) {
         if (!length)
             return 0;
@@ -132,7 +141,7 @@ Item {
         width: switcher.contentWidth + 2 * Theme.padSide
         height: hints.y + hints.height + Theme.sheetPadBottom + Theme.sheetInset
         radius: Theme.panelRadius
-        color: Theme.panel
+        color: switcher.withOpacity(Theme.panel, switcher.backgroundOpacity)
         border.width: 1
         border.color: Theme.panelEdge
 
@@ -195,6 +204,7 @@ Item {
             tabWidth: Theme.cellSize + Theme.cellGap
             tabTop: bar.y - Theme.tabRise
             tabbed: bar.tabbed
+            fill: switcher.withOpacity(Theme.sheetFill, switcher.foregroundOpacity)
         }
 
         AppBar {

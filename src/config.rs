@@ -265,6 +265,13 @@ pub(crate) struct Switcher {
     /// Whether to show each application's icon, rather than its initials.
     #[serde(default = "enabled")]
     pub(crate) icons: bool,
+    /// How solid the panel is, which the rest of the switcher lies on.
+    #[serde(default = "default_background_opacity")]
+    pub(crate) background_opacity: Opacity,
+    /// How solid the sheet the windows lie on is, and the tab joining it to
+    /// their application.
+    #[serde(default = "default_foreground_opacity")]
+    pub(crate) foreground_opacity: Opacity,
 }
 
 impl Switcher {
@@ -280,7 +287,36 @@ impl Default for Switcher {
             width: default_width(),
             max_height: default_max_height(),
             icons: enabled(),
+            background_opacity: default_background_opacity(),
+            foreground_opacity: default_foreground_opacity(),
         }
+    }
+}
+
+/// How much of what is behind something it hides: 1 for all of it, 0 for
+/// none.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(try_from = "f64")]
+pub(crate) struct Opacity(f32);
+
+impl Opacity {
+    pub(crate) fn get(self) -> f32 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for Opacity {
+    type Error = String;
+
+    fn try_from(opacity: f64) -> Result<Self, Self::Error> {
+        if !(0.0..=1.0).contains(&opacity) {
+            return Err(format!(
+                "{opacity} is not an opacity: it goes from 0, for none at all, to 1, for solid"
+            ));
+        }
+
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(Self(opacity as f32))
     }
 }
 
@@ -361,6 +397,14 @@ fn default_width() -> Size {
 
 fn default_max_height() -> Size {
     Size::Portion(0.4)
+}
+
+fn default_background_opacity() -> Opacity {
+    Opacity(0.92)
+}
+
+fn default_foreground_opacity() -> Opacity {
+    Opacity(1.0)
 }
 
 fn enabled() -> bool {
@@ -495,6 +539,38 @@ mod tests {
 
         assert_eq!(config.switcher.width, Size::Portion(0.6));
         assert_eq!(config.switcher.max_height, Size::Pixels(300));
+    }
+
+    #[test]
+    fn opacities_default_to_a_little_see_through_and_solid() {
+        let config = config("");
+
+        assert_eq!(config.switcher.background_opacity, Opacity(0.92));
+        assert_eq!(config.switcher.foreground_opacity, Opacity(1.0));
+    }
+
+    #[test]
+    fn an_opacity_is_a_number_from_none_to_solid() {
+        let config = config(
+            r#"
+            [switcher]
+            background_opacity = 0.5
+            foreground_opacity = 1
+            "#,
+        );
+
+        assert_eq!(config.switcher.background_opacity, Opacity(0.5));
+        assert_eq!(config.switcher.foreground_opacity, Opacity(1.0));
+
+        let error = toml::from_str::<Config>(
+            r#"
+            [switcher]
+            background_opacity = 1.5
+            "#,
+        )
+        .expect_err("1.5 is more than solid");
+
+        assert!(error.to_string().contains("opacity"), "{error}");
     }
 
     #[test]

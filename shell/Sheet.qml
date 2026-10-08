@@ -25,6 +25,8 @@ Shape {
     required property real tabWidth
     required property real tabTop
     required property bool tabbed
+    // Its colour, see-through as much as it is configured to be.
+    required property color fill
 
     readonly property real corner: Theme.sheetRadius
     readonly property real tabCorner: Theme.cellRadius
@@ -48,7 +50,7 @@ Shape {
     }
 
     ShapePath {
-        fillColor: Theme.sheetFill
+        fillColor: sheet.fill
         strokeColor: Theme.sheetEdge
         strokeWidth: 1
 

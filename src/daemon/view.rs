@@ -67,6 +67,8 @@ pub(crate) struct Settings {
     preview_height: u32,
     previews: bool,
     icons: bool,
+    background_opacity: f32,
+    foreground_opacity: f32,
     cancel_key: String,
     /// The font GTK applications use, so that the switcher reads like them
     /// rather than like whatever Qt falls back to.
@@ -281,6 +283,8 @@ fn settings(config: &Config, fonts: &Fonts) -> Settings {
         preview_height: config.previews.height,
         previews: config.previews.enabled,
         icons: config.switcher.icons,
+        background_opacity: config.switcher.background_opacity.get(),
+        foreground_opacity: config.switcher.foreground_opacity.get(),
         cancel_key: keycap_name(&config.keys.cancel),
         font: fonts.text.clone(),
         mono: fonts.mono.clone(),

@@ -61,8 +61,9 @@ var pageGrow = 0.92;
 // don't all fit.
 var peek = 40;
 
-// A little of whatever is behind the switcher shows through it.
-var panel = "#eb15171c";
+// How see-through the panel and the sheet are is up to the configuration:
+// these are their colours alone.
+var panel = "#15171c";
 var panelEdge = "#14ffffff";
 var shadow = "#8c000000";
 var heading = "#eef1f7";
@@ -77,7 +78,7 @@ var keycapFill = "#0fffffff";
 // marked by the tab, so that the two never look like the same kind of thing.
 var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
-var sheetFill = "#ff20232b";
+var sheetFill = "#20232b";
 var sheetEdge = "#12ffffff";
 // The shadow the sheet casts onto the panel: how dark, how soft, and how far
 // below it.
