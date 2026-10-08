@@ -52,8 +52,8 @@ there's nothing to draw the overlay with.
 
 To blur whatever shows through the switcher, give its layer, `raisin`, a [layer
 rule](https://wiki.hypr.land/configuring/core/rules/layer-rules/) with `blur`, and with
-`ignore_alpha` so that the transparent margin around the panel, where its shadow falls, isn't
-blurred too. In a Lua configuration:
+`ignore_alpha` so that the transparent corners outside the panel's rounded edges aren't blurred
+too. In a Lua configuration:
 
 ```lua
 hl.layer_rule({ match = { namespace = "^raisin$" }, blur = true, ignore_alpha = 0.6 })
