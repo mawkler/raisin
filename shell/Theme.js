@@ -2,10 +2,6 @@
 
 // The switcher's look. Colours with an alpha are written #AARRGGBB.
 
-// Room around the panel for its shadow. The window never changes size, so
-// this is spent once rather than on every switch.
-var margin = 72;
-
 var panelRadius = 20;
 var padTop = 18;
 var padBottom = 16;
@@ -65,7 +61,6 @@ var peek = 40;
 // these are their colours alone.
 var panel = "#15171c";
 var panelEdge = "#14ffffff";
-var shadow = "#8c000000";
 var heading = "#eef1f7";
 // The window a switch would land on, the hints, and a window's dots.
 var muted = "#78819a";

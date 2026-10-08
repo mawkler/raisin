@@ -137,8 +137,8 @@ ShellRoot {
         // is underneath.
         mask: Region {}
 
-        // As big as the panel and its shadow. The panel stays one size while
-        // the switcher is open, so the compositor never has to move it.
+        // As big as the panel. The panel stays one size while the switcher is
+        // open, so the compositor never has to move it.
         implicitWidth: switcher.surfaceWidth
         implicitHeight: switcher.surfaceHeight
 

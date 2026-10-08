@@ -12,7 +12,6 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Effects
 import QtQuick.Layouts
 
 import "Theme.js" as Theme
@@ -55,9 +54,9 @@ Item {
     // would make the panel taller than it may be.
     readonly property int tall: Math.max(48, Math.min(settings.previewHeight, maxHeight - chrome - 2 * Theme.cardPad - titleSpace))
 
-    // The window is exactly as big as the panel and its shadow.
-    readonly property int surfaceWidth: Math.min(screenWidth, panel.width + 2 * Theme.margin)
-    readonly property int surfaceHeight: Math.min(screenHeight, panel.height + 2 * Theme.margin)
+    // The window is exactly as big as the panel.
+    readonly property int surfaceWidth: Math.min(screenWidth, panel.width)
+    readonly property int surfaceHeight: Math.min(screenHeight, panel.height)
 
     // The open applications by the app id they are known by, and the order
     // they go in, which only changes when the applications do: a switch moves
@@ -124,14 +123,6 @@ Item {
 
         font.family: switcher.family
         font.pixelSize: 12
-    }
-
-    RectangularShadow {
-        anchors.fill: panel
-        offset.y: 20
-        blur: 50
-        radius: panel.radius
-        color: Theme.shadow
     }
 
     Rectangle {
