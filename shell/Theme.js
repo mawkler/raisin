@@ -61,7 +61,8 @@ var pageGrow = 0.92;
 // don't all fit.
 var peek = 40;
 
-var panel = "#f715171c";
+// A little of whatever is behind the switcher shows through it.
+var panel = "#eb15171c";
 var panelEdge = "#14ffffff";
 var shadow = "#8c000000";
 var heading = "#eef1f7";
