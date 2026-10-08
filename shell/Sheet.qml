@@ -1,8 +1,12 @@
 // The sheet the windows of the application being switched to lie on, and the
 // tab that rises from it behind that application in the bar: one shape, like
 // a tab and its page, so that the windows plainly belong to it.
+//
+// It casts a soft shadow onto the panel, so that it sits a little above it,
+// the tab with it.
 
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Shapes
 
 import "Theme.js" as Theme
@@ -33,6 +37,15 @@ Shape {
     readonly property real tabLeft: Theme.clamp(tabX, sheetX + corner + fillet, rightEdge - corner - fillet - tabWidth)
 
     preferredRendererType: Shape.CurveRenderer
+
+    layer.enabled: true
+    layer.effect: MultiEffect {
+        shadowEnabled: true
+        shadowColor: Theme.sheetShadow
+        shadowBlur: 1
+        blurMax: Theme.sheetShadowBlur
+        shadowVerticalOffset: Theme.sheetShadowDrop
+    }
 
     ShapePath {
         fillColor: Theme.sheetFill

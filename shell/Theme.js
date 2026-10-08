@@ -78,6 +78,11 @@ var selection = "#386b8cff";
 var selectionEdge = "#a686a4ff";
 var sheetFill = "#ff20232b";
 var sheetEdge = "#12ffffff";
+// The shadow the sheet casts onto the panel: how dark, how soft, and how far
+// below it.
+var sheetShadow = "#e6000000";
+var sheetShadowBlur = 24;
+var sheetShadowDrop = 6;
 // The dot of the window a switch would land on, and every other window's.
 var dotLit = "#eef1f7";
 var dotDim = "#5c6478";
