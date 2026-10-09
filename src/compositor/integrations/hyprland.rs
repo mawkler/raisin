@@ -58,6 +58,9 @@ pub(crate) const CONFIRM_EVENT: &str = "raisin:confirm";
 /// screen.
 pub(crate) const CANCEL_EVENT: &str = "raisin:cancel";
 
+/// Emitted by the key that closes the highlighted window.
+pub(crate) const CLOSE_EVENT: &str = "raisin:close";
+
 /// The Super keys a switch can be confirmed with.
 const SUPER_KEYS: [&str; 2] = ["Super_L", "Super_R"];
 
@@ -479,7 +482,11 @@ fn session_binds(name: &str, key: &Key, event: &str) -> Vec<Bind> {
 /// once and matched loosely — unless a steering key uses it too, in which case
 /// the modifiers are what tells them apart and have to be matched exactly.
 fn cancel_binds(keys: &Keys) -> Vec<Bind> {
-    let steering = [keys.next.as_ref(), keys.previous.as_ref()];
+    let steering = [
+        keys.next.as_ref(),
+        keys.previous.as_ref(),
+        keys.close.as_ref(),
+    ];
     let shared_with_steering = steering
         .into_iter()
         .flatten()
@@ -712,6 +719,7 @@ impl Binds {
         let steering = [
             ("next", config.keys.next.as_ref(), NEXT_EVENT),
             ("previous", config.keys.previous.as_ref(), PREVIOUS_EVENT),
+            ("close", config.keys.close.as_ref(), CLOSE_EVENT),
         ];
         let mut session: Vec<_> = steering
             .into_iter()
@@ -801,6 +809,18 @@ impl Binds {
 
         for bind in self.binds.iter_mut().chain(&mut self.session) {
             bind.occupied = occupied.others(bind) > 0;
+
+            // Every bind on a key fires, so one of the user's own on the key
+            // that closes a window would do whatever it does as well: likely
+            // close the focused window, which is a different one.
+            if bind.occupied && bind.name == "close:super" {
+                eprintln!(
+                    "raisin: {} is also bound in your Hyprland configuration, and would fire too \
+                     when it closes a window in the switcher; have yours do nothing while the \
+                     raisin layer is on screen",
+                    bind.spelled()
+                );
+            }
 
             // A shared key isn't worth mentioning: raisin's bind joins what is
             // there and nothing of the user's stops working. Only a key raisin
@@ -913,6 +933,31 @@ impl Binds {
         }
 
         self.release_session_keys();
+    }
+}
+
+impl Compositor {
+    /// Asks a window to close, the way its own close button would: it may
+    /// still ask about unsaved work.
+    pub(crate) fn close_window(&self, window: &Window) -> Result<()> {
+        let id = &window.id;
+        // The window is always named: without one, Hyprland closes whichever
+        // window is focused instead.
+        let command = match config_language() {
+            ConfigLanguage::Legacy => format!("dispatch closewindow address:{id}"),
+            ConfigLanguage::Lua => {
+                format!(r#"dispatch hl.dsp.window.close({{ window = 'address:{id}' }})"#)
+            }
+        };
+
+        let response = request(&command)?;
+        anyhow::ensure!(
+            response.trim().starts_with("ok"),
+            "Hyprland refused to close window {id}: {}",
+            response.trim()
+        );
+
+        Ok(())
     }
 }
 

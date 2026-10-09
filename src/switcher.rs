@@ -170,6 +170,48 @@ impl Session {
         self.label = label.to_owned();
     }
 
+    /// Takes the highlighted window out of the session, for a window that is
+    /// being closed. The highlight stays where it was, on the window after
+    /// it, or on the last when it was last.
+    ///
+    /// A group left without windows goes, and the session moves to the group
+    /// before it in `order`, the groups as they are shown, or else the one
+    /// after it. Returns `false` when there is no group left to move to.
+    pub(crate) fn remove_selected(&mut self, order: &[&str]) -> bool {
+        let Some(windows) = self.groups.get_mut(&self.group) else {
+            return false;
+        };
+
+        windows.remove(self.index);
+
+        if !windows.is_empty() {
+            self.index = self.index.min(windows.len() - 1);
+            return true;
+        }
+
+        self.groups.remove(&self.group);
+
+        let remains = |group: &&&str| self.groups.contains_key(**group);
+        let neighbour = match order.iter().position(|group| *group == self.group) {
+            Some(at) => order[..at]
+                .iter()
+                .rev()
+                .find(remains)
+                .or_else(|| order[at + 1..].iter().find(remains))
+                .map(|group| (*group).to_owned()),
+            None => None,
+        };
+        let Some(group) = neighbour.or_else(|| self.groups.keys().next().cloned()) else {
+            return false;
+        };
+
+        self.label = group_name(&group, &self.groups[&group]).to_owned();
+        self.group = group;
+        self.index = 0;
+
+        true
+    }
+
     /// Looks up the group `search` refers to, among this session's windows.
     pub(crate) fn find_group(&self, search: &str) -> Option<&str> {
         find_group(&self.groups, search)
@@ -440,6 +482,35 @@ mod tests {
 
         session.cycle(Direction::Backward);
         assert_eq!(session.selected_window().id, "1");
+    }
+
+    #[test]
+    fn closing_a_window_highlights_the_one_after_it() {
+        let mut session = session(None);
+        let order = ["com.mitchellh.ghostty", "brave-browser"];
+
+        assert!(session.remove_selected(&order));
+        assert_eq!(session.selected_window().id, "3");
+        assert_eq!(session.group(), "com.mitchellh.ghostty");
+    }
+
+    #[test]
+    fn closing_a_groups_last_window_moves_to_the_group_before_it_or_else_after_it() {
+        let groups = group_windows(vec![
+            window("1", "a", "a"),
+            window("2", "b", "b"),
+            window("3", "c", "c"),
+        ]);
+        let order = ["a", "b", "c"];
+        let mut session = Session::new(groups, "b", None, "b", Direction::Forward);
+
+        assert!(session.remove_selected(&order));
+        assert_eq!(session.group(), "a");
+
+        assert!(session.remove_selected(&order));
+        assert_eq!(session.group(), "c");
+
+        assert!(!session.remove_selected(&order));
     }
 
     #[test]

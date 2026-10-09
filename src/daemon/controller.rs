@@ -28,6 +28,12 @@ pub(crate) enum Event {
     Confirm,
     /// Escape was pressed.
     Cancel,
+    /// The key that closes the highlighted window was pressed.
+    ///
+    /// `order` is the applications as the switcher shows them, by group,
+    /// which decides where the switch goes when it closes an application's
+    /// last window.
+    Close { order: Vec<String> },
     /// The delay before revealing the overlay elapsed.
     Reveal { session: u64 },
 }
@@ -48,6 +54,8 @@ pub(crate) enum Effect {
     Hide,
     /// Focus the window the user settled on.
     Focus(Window),
+    /// Ask a window to close.
+    Close(Window),
     /// Launch an application that has no windows open.
     ///
     /// The whole target, not just its command: what is shown while it starts
@@ -86,6 +94,7 @@ impl Controller {
             Event::Cycle { direction } => self.cycle(direction),
             Event::Confirm => self.confirm(),
             Event::Cancel => self.end(),
+            Event::Close { order } => self.close(&order),
             Event::Reveal { session } => self.reveal(session),
         }
     }
@@ -198,6 +207,33 @@ impl Controller {
         let window = session.selected_window().clone();
         let mut effects = self.end();
         effects.push(Effect::Focus(window));
+
+        effects
+    }
+
+    /// Closes the highlighted window, and carries on with the rest.
+    ///
+    /// Only a switch on screen closes anything: a window nobody can see
+    /// being chosen is not one to close.
+    fn close(&mut self, order: &[String]) -> Vec<Effect> {
+        let Some(session) = &mut self.session else {
+            return vec![];
+        };
+
+        if !self.shown {
+            return vec![];
+        }
+
+        let window = session.selected_window().clone();
+        let order: Vec<&str> = order.iter().map(String::as_str).collect();
+
+        if session.remove_selected(&order) {
+            return vec![Effect::Close(window), Effect::Fill, Effect::Highlight];
+        }
+
+        // That was the last window there was.
+        let mut effects = self.end();
+        effects.push(Effect::Close(window));
 
         effects
     }
@@ -438,6 +474,69 @@ mod tests {
         assert_eq!(controller.handle(Event::Confirm), []);
         assert_eq!(controller.handle(Event::Cancel), []);
         assert_eq!(controller.handle(Event::Reveal { session: 0 }), []);
+    }
+
+    fn close() -> Event {
+        Event::Close {
+            order: vec![
+                "com.mitchellh.ghostty".to_owned(),
+                "brave-browser".to_owned(),
+            ],
+        }
+    }
+
+    #[test]
+    fn closing_a_window_keeps_the_switcher_open_on_the_rest() {
+        let mut controller = opened();
+
+        assert_eq!(
+            controller.handle(close()),
+            [
+                Effect::Close(window("1", "com.mitchellh.ghostty")),
+                Effect::Fill,
+                Effect::Highlight
+            ]
+        );
+        assert_eq!(
+            controller.handle(Event::Confirm),
+            [
+                Effect::Hide,
+                Effect::Focus(window("3", "com.mitchellh.ghostty"))
+            ]
+        );
+    }
+
+    #[test]
+    fn closing_an_applications_last_window_moves_to_the_next_one_shown() {
+        let mut controller = opened();
+        controller.handle(close());
+        controller.handle(close());
+
+        assert_eq!(
+            controller.handle(Event::Confirm),
+            [Effect::Hide, Effect::Focus(window("2", "brave-browser"))]
+        );
+    }
+
+    #[test]
+    fn closing_the_last_window_there_is_ends_the_switch() {
+        let mut controller = opened();
+        controller.handle(close());
+        controller.handle(close());
+
+        assert_eq!(
+            controller.handle(close()),
+            [Effect::Hide, Effect::Close(window("2", "brave-browser"))]
+        );
+        assert_eq!(controller.handle(Event::Confirm), []);
+    }
+
+    #[test]
+    fn nothing_is_closed_before_the_switcher_is_on_screen() {
+        let mut controller = started();
+
+        assert_eq!(controller.handle(close()), []);
+        assert_eq!(Controller::default().handle(close()), []);
     }
 
     #[test]

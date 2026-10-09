@@ -188,6 +188,9 @@ pub(crate) struct Keys {
     /// Moves it back to the previous one.
     #[serde(default)]
     pub(crate) previous: Option<Key>,
+    /// Closes the highlighted window, leaving the switcher open on the rest.
+    #[serde(default)]
+    pub(crate) close: Option<Key>,
     /// Closes the switcher without switching.
     #[serde(default = "default_cancel")]
     pub(crate) cancel: Key,
@@ -199,6 +202,7 @@ impl Default for Keys {
             apps: BTreeMap::new(),
             next: None,
             previous: None,
+            close: None,
             cancel: default_cancel(),
         }
     }

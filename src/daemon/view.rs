@@ -73,6 +73,8 @@ pub(crate) struct Settings {
     /// The theme's colours, which the view works the rest out from.
     palette: Palette,
     cancel_key: String,
+    /// The key that closes the highlighted window, when there is one.
+    close_key: Option<String>,
     /// The font GTK applications use, so that the switcher reads like them
     /// rather than like whatever Qt falls back to.
     font: Option<String>,
@@ -290,6 +292,7 @@ fn settings(config: &Config, fonts: &Fonts) -> Settings {
         foreground_opacity: config.switcher.foreground_opacity.get(),
         palette: config.palette.clone(),
         cancel_key: keycap_name(&config.keys.cancel),
+        close_key: config.keys.close.as_ref().map(keycap_name),
         font: fonts.text.clone(),
         mono: fonts.mono.clone(),
     }
@@ -328,15 +331,7 @@ fn scene(
         }
     }
 
-    // In the order of the keys that reach them, which is the order they are
-    // learned in. One with no key of its own can only be reached by walking,
-    // so it goes last.
-    rows.sort_by_key(|row| {
-        (
-            row.key.is_none(),
-            row.key.as_deref().unwrap_or_default().to_lowercase(),
-        )
-    });
+    rows.sort_by_key(|row| place(row.key.as_deref()));
 
     let mut absent: Vec<Chip> = absent
         .iter()
@@ -363,6 +358,27 @@ fn scene(
         rows,
         absent,
     }
+}
+
+/// The open applications by group, in the order the switcher shows them.
+pub(crate) fn order(session: &Session, triggers: &HashMap<String, String>) -> Vec<String> {
+    let mut groups: Vec<&str> = session
+        .rows()
+        .filter_map(|row| match row {
+            Row::Group { app_id, .. } => Some(app_id),
+            Row::Window { .. } => None,
+        })
+        .collect();
+    groups.sort_by_key(|group| place(triggers.get(*group).map(String::as_str)));
+
+    groups.into_iter().map(str::to_owned).collect()
+}
+
+/// Where an application with the key `key` goes among the others: in the
+/// order of the keys that reach them, which is the order they are learned in.
+/// One with no key of its own can only be reached by walking, so it goes last.
+fn place(key: Option<&str>) -> (bool, String) {
+    (key.is_none(), key.unwrap_or_default().to_lowercase())
 }
 
 /// What to call a window: its title, or its application for a window without
@@ -505,6 +521,14 @@ mod tests {
         assert_eq!(ghostty[1].title, "com.mitchellh.ghostty");
         assert!((ghostty[1].aspect - RATIO).abs() < f32::EPSILON);
         assert!((scene.rows[1].windows[0].aspect - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn the_order_is_the_order_the_rows_are_shown_in() {
+        assert_eq!(
+            order(&session(), &triggers()),
+            ["com.mitchellh.ghostty", "brave-browser", "zen"]
+        );
     }
 
     #[test]

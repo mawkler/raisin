@@ -271,8 +271,9 @@ Item {
 
         // The keys that walk the windows, with the windows: the application's
         // own key, and Shift with it the other way. Then Ctrl with it, for a
-        // window it doesn't have yet. Kept in place without one, so that the
-        // panel stays the same size.
+        // window it doesn't have yet, and the key that closes one, if there
+        // is one. Kept in place without one, so that the panel stays the
+        // same size.
         Row {
             id: hints
 
@@ -301,6 +302,14 @@ Item {
             Hint {
                 key: "Ctrl + " + (hints.key || " ")
                 says: "new window"
+                family: switcher.family
+                mono: switcher.mono
+            }
+
+            Hint {
+                visible: key !== ""
+                key: switcher.settings.closeKey ?? ""
+                says: "close window"
                 family: switcher.family
                 mono: switcher.mono
             }

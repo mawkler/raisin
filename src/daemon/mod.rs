@@ -22,8 +22,8 @@ use anyhow::{Context, Result};
 use crate::compositor::Compositor as _;
 use crate::compositor::Window;
 use crate::compositor::integrations::hyprland::{
-    self, BACK_EVENT, Binds, CANCEL_EVENT, CONFIRM_EVENT, LAUNCH_EVENT, NEXT_EVENT, PREVIOUS_EVENT,
-    SWITCH_EVENT,
+    self, BACK_EVENT, Binds, CANCEL_EVENT, CLOSE_EVENT, CONFIRM_EVENT, LAUNCH_EVENT, NEXT_EVENT,
+    PREVIOUS_EVENT, SWITCH_EVENT,
 };
 use crate::config::{Config, Target};
 use crate::switcher::{Direction, Session};
@@ -199,6 +199,11 @@ impl Daemon {
                     eprintln!("raisin: {error:#}");
                 }
             }
+            Effect::Close(window) => {
+                if let Err(error) = self.compositor.close_window(&window) {
+                    eprintln!("raisin: {error:#}");
+                }
+            }
             Effect::Launch(target) => self.launch(&target),
         }
     }
@@ -216,6 +221,21 @@ impl Daemon {
         }
 
         self.view.starting(target.search(), &target.app);
+    }
+
+    /// Closes the highlighted window, telling the controller where the
+    /// switch would go if that leaves its application with none.
+    fn close(self: &Rc<Self>) {
+        let order = {
+            let controller = self.controller.borrow();
+            let Some(session) = controller.session() else {
+                return;
+            };
+
+            view::order(session, &triggers(&self.config(), session))
+        };
+
+        self.handle(Event::Close { order });
     }
 
     /// Fills the switcher from the switch in progress.
@@ -303,6 +323,7 @@ fn on_hyprland_event(daemon: &Rc<Daemon>, line: &str) {
     match event {
         "custom" if data == CONFIRM_EVENT => daemon.handle(Event::Confirm),
         "custom" if data == CANCEL_EVENT => daemon.handle(Event::Cancel),
+        "custom" if data == CLOSE_EVENT => daemon.close(),
         "custom" if data == NEXT_EVENT => daemon.handle(Event::Cycle {
             direction: Direction::Forward,
         }),
