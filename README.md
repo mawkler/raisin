@@ -59,6 +59,9 @@ too. In a Lua configuration:
 hl.layer_rule({ match = { namespace = "^raisin$" }, blur = true, ignore_alpha = 0.6 })
 ```
 
+The icon raisin shows when it starts an application is on a layer of its own, `raisin-splash`, which
+that rule leaves out, so nothing is blurred behind it.
+
 ## Configuration
 
 Raisin reads `$XDG_CONFIG_HOME/raisin/config.toml` — usually `~/.config/raisin/config.toml` — or

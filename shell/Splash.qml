@@ -36,6 +36,10 @@ Item {
     // How far it drifts up as it appears.
     readonly property real lift: 10
 
+    // Room for it at its largest, wherever it drifts.
+    implicitWidth: Math.round(size * grown)
+    implicitHeight: implicitWidth + 2 * lift
+
     readonly property real arrived: eased(elapsed / appearing)
     readonly property real gone: Theme.clamp((elapsed - appearing) / leaving, 0, 1)
 

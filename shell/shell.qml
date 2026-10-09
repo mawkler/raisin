@@ -143,7 +143,7 @@ ShellRoot {
         implicitWidth: switcher.surfaceWidth
         implicitHeight: switcher.surfaceHeight
 
-        visible: root.shown || splash.playing
+        visible: root.shown
 
         Switcher {
             id: switcher
@@ -171,6 +171,26 @@ ShellRoot {
 
             property int frames: 0
         }
+    }
+
+    // An application starting, on a layer of its own and only as big as its
+    // icon: whatever Hyprland is told to do behind the switcher, such as
+    // blurring, has nothing to do with it.
+    PanelWindow {
+        screen: window.screen
+
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.namespace: "raisin-splash"
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        exclusionMode: ExclusionMode.Ignore
+
+        color: "transparent"
+        mask: Region {}
+
+        implicitWidth: splash.implicitWidth
+        implicitHeight: splash.implicitHeight
+
+        visible: splash.playing
 
         Splash {
             id: splash
