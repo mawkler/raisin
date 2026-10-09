@@ -138,19 +138,25 @@ half-saved file is a normal thing for an editor to leave behind for a moment.
 ### Themes
 
 A theme sets the six colours the switcher is drawn in, and raisin works out the rest (borders,
-keys, the selected window's outline) from them. It comes with `default` and `light`, and with
-[Catppuccin](https://github.com/catppuccin/catppuccin)'s four flavours: `catppuccin-latte`,
-`catppuccin-frappe`, `catppuccin-macchiato` and `catppuccin-mocha`. To make your own, put a file in
-`~/.config/raisin/themes`, and name it in `[switcher]` without its `.toml`: `theme = "nord"` for
-`~/.config/raisin/themes/nord.toml`.
+keys, the selected window's outline) from them. It comes with these:
+
+- `default` and `light`, raisin's own
+- `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato` and `catppuccin-mocha`, the four
+  flavours of [Catppuccin](https://github.com/catppuccin/catppuccin)
+- `nord`, [Nord](https://github.com/nordtheme/nord)
+- `one-dark`, Atom's One Dark
+- `tokyo-night`, [Tokyo Night](https://github.com/folke/tokyonight.nvim)'s night style
+
+To make your own, put a file in `~/.config/raisin/themes`, and name it in `[switcher]` without its
+`.toml`: `theme = "mine"` for `~/.config/raisin/themes/mine.toml`.
 
 ```toml
-background = "#2e3440" # the panel everything lies on
-surface = "#3b4252"    # the sheet the windows lie on, and its tab
-accent = "#88c0d0"     # the window a switch would land on
-text = "#d8dee9"       # window titles, and the keys
-bright = "#eceff4"     # the application in the heading, the selected window's title and dot
-muted = "#81a1c1"      # the window in the heading, what the keys do, the other windows' dots
+background = "#15171c" # the panel everything lies on
+surface = "#20232b"    # the sheet the windows lie on, and its tab
+accent = "#6b8cff"     # the window a switch would land on
+text = "#c4cad8"       # window titles, and the keys
+bright = "#eef1f7"     # the application in the heading, the selected window's title and dot
+muted = "#78819a"      # the window in the heading, what the keys do, the other windows' dots
 ```
 
 A colour the file leaves out is the default theme's, and a theme of yours with the same name as one
