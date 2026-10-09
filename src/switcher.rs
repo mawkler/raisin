@@ -175,8 +175,8 @@ impl Session {
     /// it, or on the last when it was last.
     ///
     /// A group left without windows goes, and the session moves to the group
-    /// before it in `order`, the groups as they are shown, or else the one
-    /// after it. Returns `false` when there is no group left to move to.
+    /// after it in `order`, the groups as they are shown, or else the one
+    /// before it. Returns `false` when there is no group left to move to.
     pub(crate) fn remove_selected(&mut self, order: &[&str]) -> bool {
         let Some(windows) = self.groups.get_mut(&self.group) else {
             return false;
@@ -193,11 +193,10 @@ impl Session {
 
         let remains = |group: &&&str| self.groups.contains_key(**group);
         let neighbour = match order.iter().position(|group| *group == self.group) {
-            Some(at) => order[..at]
+            Some(at) => order[at + 1..]
                 .iter()
-                .rev()
                 .find(remains)
-                .or_else(|| order[at + 1..].iter().find(remains))
+                .or_else(|| order[..at].iter().rev().find(remains))
                 .map(|group| (*group).to_owned()),
             None => None,
         };
@@ -495,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_groups_last_window_moves_to_the_group_before_it_or_else_after_it() {
+    fn closing_a_groups_last_window_moves_to_the_group_after_it_or_else_before_it() {
         let groups = group_windows(vec![
             window("1", "a", "a"),
             window("2", "b", "b"),
@@ -505,10 +504,10 @@ mod tests {
         let mut session = Session::new(groups, "b", None, "b", Direction::Forward);
 
         assert!(session.remove_selected(&order));
-        assert_eq!(session.group(), "a");
+        assert_eq!(session.group(), "c");
 
         assert!(session.remove_selected(&order));
-        assert_eq!(session.group(), "c");
+        assert_eq!(session.group(), "a");
 
         assert!(!session.remove_selected(&order));
     }
