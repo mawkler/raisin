@@ -1,0 +1,9 @@
+# Tokyo Night, its night style, as https://github.com/folke/tokyonight.nvim has
+# it, under the Apache License 2.0.
+
+background = "#16161e" # bg_dark
+surface = "#1a1b26"    # bg
+accent = "#7aa2f7"     # blue
+text = "#a9b1d6"       # fg_dark
+bright = "#c0caf5"     # fg
+muted = "#737aa2"      # dark5

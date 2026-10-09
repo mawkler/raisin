@@ -30,6 +30,9 @@ const BUILT_IN: &[(&str, &str)] = &[
         "catppuccin-mocha",
         include_str!("../themes/catppuccin-mocha.toml"),
     ),
+    ("nord", include_str!("../themes/nord.toml")),
+    ("one-dark", include_str!("../themes/one-dark.toml")),
+    ("tokyo-night", include_str!("../themes/tokyo-night.toml")),
 ];
 
 /// The six colours the switcher is drawn in.
@@ -222,10 +225,10 @@ mod tests {
     #[test]
     fn a_theme_that_isnt_there_says_where_raisin_looked() {
         let directory = themes("missing", &[]);
-        let error = load("nord", Some(&directory)).expect_err("there's no nord");
+        let error = load("dracula", Some(&directory)).expect_err("there's no dracula");
         let error = format!("{error:#}");
 
-        assert!(error.contains("nord.toml"), "{error}");
+        assert!(error.contains("dracula.toml"), "{error}");
         assert!(
             error.contains("default, light, catppuccin-latte"),
             "{error}"

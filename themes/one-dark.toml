@@ -1,0 +1,10 @@
+# One Dark, Atom's dark theme, from https://github.com/atom/atom (one-dark-ui
+# and one-dark-syntax). Its colours are copyright (c) 2011-2022 GitHub Inc.,
+# under the MIT licence.
+
+background = "#21252b" # the tab bar and tree view
+surface = "#282c34"    # the editor
+accent = "#528bff"     # the syntax accent
+text = "#9da5b4"       # the interface's text
+bright = "#d7dae0"     # its highlighted text
+muted = "#828997"      # mono-2

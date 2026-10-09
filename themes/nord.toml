@@ -1,0 +1,9 @@
+# Nord, from https://github.com/nordtheme/nord.
+# Its colours are copyright (c) 2016-present Sven Greb, under the MIT licence.
+
+background = "#2e3440" # nord0
+surface = "#3b4252"    # nord1
+accent = "#88c0d0"     # nord8
+text = "#d8dee9"       # nord4
+bright = "#eceff4"     # nord6
+muted = "#81a1c1"      # nord9
