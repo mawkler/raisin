@@ -89,6 +89,7 @@ max_height = "40%"        # thumbnails shrink to keep the switcher within this
 icons = true              # show each application's icon, rather than its initials
 background_opacity = 0.92 # how solid the panel is, from 0 (not at all) to 1
 foreground_opacity = 1    # and the sheet the windows lie on, with its tab
+theme = "default"         # the colours: "default", "light", or one of your own
 
 [previews]
 enabled = true # show what each window looks like
@@ -127,6 +128,30 @@ when two of its own keys are the same key.
 A setting the file misspells is an error — at startup it stops the
 daemon, and on a reload it leaves the running configuration alone and says what was wrong, since a
 half-saved file is a normal thing for an editor to leave behind for a moment.
+
+### Themes
+
+A theme sets the six colours the switcher is drawn in, and raisin works out the rest (borders,
+keys, the selected window's outline) from them. It comes with two, `default` and `light`. To make
+your own, put a file in `~/.config/raisin/themes`, and name it in `[switcher]` without its `.toml`:
+`theme = "nord"` for `~/.config/raisin/themes/nord.toml`.
+
+```toml
+background = "#2e3440" # the panel everything lies on
+surface = "#3b4252"    # the sheet the windows lie on, and its tab
+accent = "#88c0d0"     # the window a switch would land on
+text = "#d8dee9"       # window titles, and the keys
+bright = "#eceff4"     # the application in the heading, the selected window's title and dot
+muted = "#81a1c1"      # the window in the heading, what the keys do, the other windows' dots
+```
+
+A colour the file leaves out is the default theme's, and a theme of yours with the same name as one
+of raisin's takes its place. `theme` can also be the path to a theme file, which is the way to use
+one from a Nix configuration. [`themes/`](themes) has raisin's own to start from.
+
+Saving a theme in `~/.config/raisin/themes` restyles the switcher straight away, as saving the
+configuration does. `background_opacity` and `foreground_opacity` still apply on top of `background`
+and `surface`.
 
 ## Run/install
 
