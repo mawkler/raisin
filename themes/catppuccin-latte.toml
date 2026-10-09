@@ -1,0 +1,9 @@
+# Catppuccin Latte, from https://github.com/catppuccin/catppuccin.
+# Its colours are copyright (c) 2021 Catppuccin, under the MIT licence.
+
+background = "#e6e9ef" # Mantle
+surface = "#eff1f5"    # Base
+accent = "#7287fd"     # Lavender
+text = "#5c5f77"       # Subtext 1
+bright = "#4c4f69"     # Text
+muted = "#8c8fa1"      # Overlay 1

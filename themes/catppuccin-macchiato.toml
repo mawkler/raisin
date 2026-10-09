@@ -1,0 +1,9 @@
+# Catppuccin Macchiato, from https://github.com/catppuccin/catppuccin.
+# Its colours are copyright (c) 2021 Catppuccin, under the MIT licence.
+
+background = "#1e2030" # Mantle
+surface = "#24273a"    # Base
+accent = "#b7bdf8"     # Lavender
+text = "#b8c0e0"       # Subtext 1
+bright = "#cad3f5"     # Text
+muted = "#8087a2"      # Overlay 1

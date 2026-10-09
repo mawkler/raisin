@@ -1,0 +1,9 @@
+# Catppuccin Mocha, from https://github.com/catppuccin/catppuccin.
+# Its colours are copyright (c) 2021 Catppuccin, under the MIT licence.
+
+background = "#181825" # Mantle
+surface = "#1e1e2e"    # Base
+accent = "#b4befe"     # Lavender
+text = "#bac2de"       # Subtext 1
+bright = "#cdd6f4"     # Text
+muted = "#7f849c"      # Overlay 1

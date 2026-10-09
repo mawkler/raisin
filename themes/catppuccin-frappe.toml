@@ -1,0 +1,9 @@
+# Catppuccin Frappé, from https://github.com/catppuccin/catppuccin.
+# Its colours are copyright (c) 2021 Catppuccin, under the MIT licence.
+
+background = "#292c3c" # Mantle
+surface = "#303446"    # Base
+accent = "#babbf1"     # Lavender
+text = "#b5bfe2"       # Subtext 1
+bright = "#c6d0f5"     # Text
+muted = "#838ba7"      # Overlay 1

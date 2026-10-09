@@ -294,8 +294,8 @@ pub(crate) struct Switcher {
     #[serde(default = "default_foreground_opacity")]
     pub(crate) foreground_opacity: Opacity,
     /// The colours it's drawn in: the name of a theme, either the user's own
-    /// in `~/.config/raisin/themes` or one raisin comes with, `default` and
-    /// `light`. Or the path to a theme file.
+    /// in `~/.config/raisin/themes` or one raisin comes with, like `default`,
+    /// `light` or `catppuccin-mocha`. Or the path to a theme file.
     #[serde(default = "default_theme")]
     pub(crate) theme: String,
 }

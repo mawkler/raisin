@@ -2,7 +2,7 @@
 //! every other.
 //!
 //! A theme is a file of colours, picked by name: one of the user's own from
-//! `~/.config/raisin/themes`, or one of the two raisin comes with. A colour a
+//! `~/.config/raisin/themes`, or one of those raisin comes with. A colour a
 //! theme leaves out is the default theme's.
 
 use std::path::{Path, PathBuf};
@@ -14,6 +14,22 @@ use serde::{Deserialize, Serialize};
 const BUILT_IN: &[(&str, &str)] = &[
     ("default", include_str!("../themes/default.toml")),
     ("light", include_str!("../themes/light.toml")),
+    (
+        "catppuccin-latte",
+        include_str!("../themes/catppuccin-latte.toml"),
+    ),
+    (
+        "catppuccin-frappe",
+        include_str!("../themes/catppuccin-frappe.toml"),
+    ),
+    (
+        "catppuccin-macchiato",
+        include_str!("../themes/catppuccin-macchiato.toml"),
+    ),
+    (
+        "catppuccin-mocha",
+        include_str!("../themes/catppuccin-mocha.toml"),
+    ),
 ];
 
 /// The six colours the switcher is drawn in.
@@ -136,7 +152,7 @@ fn find(name: &str, directory: Option<&Path>) -> Result<(String, String)> {
 
             format!(
                 "there's no theme called '{name}': {looked}raisin's own are {}",
-                built_in.join(" and ")
+                built_in.join(", ")
             )
         })?;
 
@@ -210,7 +226,10 @@ mod tests {
         let error = format!("{error:#}");
 
         assert!(error.contains("nord.toml"), "{error}");
-        assert!(error.contains("default and light"), "{error}");
+        assert!(
+            error.contains("default, light, catppuccin-latte"),
+            "{error}"
+        );
     }
 
     #[test]
