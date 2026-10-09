@@ -3,7 +3,9 @@
 // a tab and its page, so that the windows plainly belong to it.
 //
 // It casts a soft shadow onto the panel, so that it sits a little above it,
-// the tab with it.
+// the tab with it. However see-through it is configured to be, it is drawn
+// solid and made see-through afterwards, shadow and all: the shadow fades
+// with it, and never shows through it.
 
 import QtQuick
 import QtQuick.Effects
@@ -23,8 +25,6 @@ Shape {
     required property real tabWidth
     required property real tabTop
     required property bool tabbed
-    // Its colour, see-through as much as it is configured to be.
-    required property color fill
 
     readonly property real corner: Theme.sheetRadius
     readonly property real tabCorner: Theme.cellRadius
@@ -48,7 +48,7 @@ Shape {
     }
 
     ShapePath {
-        fillColor: sheet.fill
+        fillColor: Theme.sheetFill
         strokeColor: Theme.sheetEdge
         strokeWidth: 1
 

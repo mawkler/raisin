@@ -187,7 +187,7 @@ Item {
             tabWidth: Theme.cellSize + Theme.cellGap
             tabTop: bar.y - Theme.tabRise
             tabbed: bar.tabbed
-            fill: Theme.withAlpha(Theme.sheetFill, switcher.foregroundOpacity)
+            opacity: switcher.foregroundOpacity
         }
 
         AppBar {
