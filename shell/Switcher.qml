@@ -270,14 +270,15 @@ Item {
         }
 
         // The keys that walk the windows, with the windows: the application's
-        // own key, and Shift with it the other way. Then Ctrl with it, for a
-        // window it doesn't have yet, and the key that closes one, if there
-        // is one. Kept in place without one, so that the panel stays the
-        // same size.
+        // own key, and Shift with it the other way, when there is more than
+        // one window to walk. Then Ctrl with it, for a window it doesn't have
+        // yet, and the key that closes one, if there is one. Kept in place
+        // without one, so that the panel stays the same size.
         Row {
             id: hints
 
             readonly property string key: switcher.scene?.cycleKey ?? ""
+            readonly property bool several: (switcher.rows[switcher.scene?.target ?? ""]?.windows.length ?? 0) > 1
 
             x: strip.x + strip.width - width - Theme.cardPad
             y: strip.y + strip.height + Theme.hintGap
@@ -286,6 +287,7 @@ Item {
             opacity: key !== "" ? Theme.faint : 0
 
             Hint {
+                visible: hints.several
                 key: hints.key || " "
                 says: "next"
                 family: switcher.family
@@ -293,6 +295,7 @@ Item {
             }
 
             Hint {
+                visible: hints.several
                 key: "Shift + " + (hints.key || " ")
                 says: "previous"
                 family: switcher.family
@@ -301,7 +304,7 @@ Item {
 
             Hint {
                 key: "Ctrl + " + (hints.key || " ")
-                says: "new window"
+                says: "new"
                 family: switcher.family
                 mono: switcher.mono
             }
@@ -309,7 +312,7 @@ Item {
             Hint {
                 visible: key !== ""
                 key: switcher.settings.closeKey ?? ""
-                says: "close window"
+                says: "close"
                 family: switcher.family
                 mono: switcher.mono
             }
