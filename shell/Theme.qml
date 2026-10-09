@@ -35,7 +35,7 @@ Singleton {
     readonly property real tabRise: 6
     readonly property real fillet: 10
     // Between the windows and the keys that walk them.
-    readonly property real hintGap: 2
+    readonly property real hintGap: 6
 
     // The applications: a cell each, with a dot per open window under the
     // icon and the key that reaches it under the cell.

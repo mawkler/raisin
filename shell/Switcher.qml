@@ -270,8 +270,9 @@ Item {
         }
 
         // The keys that walk the windows, with the windows: the application's
-        // own key, and Shift with it the other way. Kept in place without
-        // one, so that the panel stays the same size.
+        // own key, and Shift with it the other way. Then Ctrl with it, for a
+        // window it doesn't have yet. Kept in place without one, so that the
+        // panel stays the same size.
         Row {
             id: hints
 
@@ -293,6 +294,13 @@ Item {
             Hint {
                 key: "Shift + " + (hints.key || " ")
                 says: "previous"
+                family: switcher.family
+                mono: switcher.mono
+            }
+
+            Hint {
+                key: "Ctrl + " + (hints.key || " ")
+                says: "new window"
                 family: switcher.family
                 mono: switcher.mono
             }
