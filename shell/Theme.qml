@@ -118,7 +118,7 @@ Singleton {
     readonly property color selectionEdge: withAlpha(mix(palette.accent, palette.bright, 0.22), 0.65)
     // The shadow the sheet casts onto the panel, fainter the lighter the
     // panel is: a dark shadow on a light panel reads as dirt.
-    readonly property color sheetShadow: Qt.rgba(0, 0, 0, 0.95 - 0.65 * Qt.color(palette.background).hslLightness)
+    readonly property color sheetShadow: Qt.rgba(0, 0, 0, 0.65 - 0.45 * Qt.color(palette.background).hslLightness)
     // The dot of the window a switch would land on, and every other window's.
     readonly property color dotLit: palette.bright
     readonly property color dotDim: mix(palette.muted, palette.background, 0.28)
