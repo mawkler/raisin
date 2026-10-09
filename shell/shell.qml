@@ -1,4 +1,5 @@
 //@ pragma Env QSG_RENDER_LOOP=threaded
+//@ pragma Env QSG_USE_SIMPLE_ANIMATION_DRIVER=1
 //@ pragma Env QT_WAYLAND_DISABLE_WINDOWDECORATION=1
 
 // raisin's switcher, as its daemon describes it.
@@ -6,6 +7,10 @@
 // The daemon decides everything and says so over a socket, one line of JSON
 // at a time. This only draws what it is told, and moves smoothly between one
 // thing it is told and the next.
+//
+// Animations keep to the clock rather than to frames: the threaded render
+// loop otherwise counts every frame as one of the primary screen's, so on a
+// screen twice as fast as that one everything moved twice as fast.
 
 pragma ComponentBehavior: Bound
 
