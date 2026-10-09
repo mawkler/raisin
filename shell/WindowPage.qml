@@ -5,8 +5,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 
-import "Theme.js" as Theme
-
 Item {
     id: page
 

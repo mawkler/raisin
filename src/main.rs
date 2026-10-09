@@ -8,6 +8,7 @@ mod compositor;
 mod config;
 mod daemon;
 mod switcher;
+mod theme;
 
 fn main() -> anyhow::Result<()> {
     let args = cli::Args::parse();

@@ -17,6 +17,7 @@ use super::quickshell::Quickshell;
 use crate::compositor::Window;
 use crate::config::{self, Config};
 use crate::switcher::{Row, Session};
+use crate::theme::Palette;
 
 /// The shape a tile assumes a window has when the compositor won't say how big
 /// it is: the shape a landscape window usually has.
@@ -69,6 +70,8 @@ pub(crate) struct Settings {
     icons: bool,
     background_opacity: f32,
     foreground_opacity: f32,
+    /// The theme's colours, which the view works the rest out from.
+    palette: Palette,
     cancel_key: String,
     /// The font GTK applications use, so that the switcher reads like them
     /// rather than like whatever Qt falls back to.
@@ -285,6 +288,7 @@ fn settings(config: &Config, fonts: &Fonts) -> Settings {
         icons: config.switcher.icons,
         background_opacity: config.switcher.background_opacity.get(),
         foreground_opacity: config.switcher.foreground_opacity.get(),
+        palette: config.palette.clone(),
         cancel_key: keycap_name(&config.keys.cancel),
         font: fonts.text.clone(),
         mono: fonts.mono.clone(),
@@ -542,6 +546,20 @@ mod tests {
             serde_json::to_value(Length::Portion(0.5)).unwrap(),
             serde_json::json!({ "portion": 0.5 })
         );
+    }
+
+    #[test]
+    fn the_configuration_carries_the_themes_colours() {
+        let fonts = Fonts {
+            text: None,
+            mono: None,
+        };
+        let message = Message::Config(settings(&Config::default(), &fonts));
+        let message = serde_json::to_value(message).unwrap();
+
+        assert_eq!(message["type"], "config");
+        assert_eq!(message["palette"]["background"], "#15171c");
+        assert_eq!(message["palette"]["accent"], "#6b8cff");
     }
 
     #[test]

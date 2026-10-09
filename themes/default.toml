@@ -1,0 +1,18 @@
+# raisin's own theme, and what a theme that leaves a colour out falls back to.
+#
+# To make your own, copy this to ~/.config/raisin/themes/<name>.toml, change
+# what you like, and set `theme = "<name>"` under [switcher] in config.toml.
+# Every other colour the switcher uses is worked out from these six.
+
+# The panel everything lies on.
+background = "#15171c"
+# The sheet the windows lie on, and the tab joining it to their application.
+surface = "#20232b"
+# The window a switch would land on.
+accent = "#6b8cff"
+# Window titles, and the keys.
+text = "#c4cad8"
+# The application in the heading, the selected window's title and its dot.
+bright = "#eef1f7"
+# The window in the heading, what the keys do, and the other windows' dots.
+muted = "#78819a"

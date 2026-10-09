@@ -13,13 +13,26 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// Where the configuration lives unless `--config` says otherwise.
-pub(crate) fn default_path() -> Option<PathBuf> {
+use crate::theme::{self, Palette};
+
+/// raisin's own corner of the user's configuration.
+fn directory() -> Option<PathBuf> {
     let config_home = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
 
-    Some(config_home.join("raisin").join("config.toml"))
+    Some(config_home.join("raisin"))
+}
+
+/// Where the configuration lives unless `--config` says otherwise.
+pub(crate) fn default_path() -> Option<PathBuf> {
+    Some(directory()?.join("config.toml"))
+}
+
+/// Where the user's own themes are, wherever the configuration is: a
+/// configuration in the Nix store can still use them.
+pub(crate) fn themes_directory() -> Option<PathBuf> {
+    Some(directory()?.join("themes"))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -41,6 +54,10 @@ pub(crate) struct Config {
     /// Brave`.
     #[serde(default, deserialize_with = "lowercased_keys")]
     pub(crate) names: BTreeMap<String, String>,
+    /// The colours of the theme the switcher is drawn in, read along with
+    /// the file that names it.
+    #[serde(skip)]
+    pub(crate) palette: Palette,
 }
 
 /// `app_id`s are compared in lowercase, the same way windows are grouped by
@@ -67,8 +84,8 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns an error if `path` was given but can't be read, or if the file
-    /// doesn't parse.
+    /// Returns an error if `path` was given but can't be read, if the file
+    /// doesn't parse, or if the theme it names can't be had.
     pub(crate) fn load(path: Option<&Path>) -> Result<Self> {
         let required = path.is_some();
 
@@ -86,7 +103,11 @@ impl Config {
             }
         };
 
-        toml::from_str(&file).with_context(|| format!("{} isn't valid", path.display()))
+        let mut config: Self =
+            toml::from_str(&file).with_context(|| format!("{} isn't valid", path.display()))?;
+        config.palette = theme::load(&config.switcher.theme, themes_directory().as_deref())?;
+
+        Ok(config)
     }
 
     /// The application the key raisin named `id` targets, if any.
@@ -272,6 +293,11 @@ pub(crate) struct Switcher {
     /// their application.
     #[serde(default = "default_foreground_opacity")]
     pub(crate) foreground_opacity: Opacity,
+    /// The colours it's drawn in: the name of a theme, either the user's own
+    /// in `~/.config/raisin/themes` or one raisin comes with, `default` and
+    /// `light`. Or the path to a theme file.
+    #[serde(default = "default_theme")]
+    pub(crate) theme: String,
 }
 
 impl Switcher {
@@ -289,6 +315,7 @@ impl Default for Switcher {
             icons: enabled(),
             background_opacity: default_background_opacity(),
             foreground_opacity: default_foreground_opacity(),
+            theme: default_theme(),
         }
     }
 }
@@ -405,6 +432,10 @@ fn default_background_opacity() -> Opacity {
 
 fn default_foreground_opacity() -> Opacity {
     Opacity(1.0)
+}
+
+fn default_theme() -> String {
+    "default".to_owned()
 }
 
 fn enabled() -> bool {
@@ -571,6 +602,21 @@ mod tests {
         .expect_err("1.5 is more than solid");
 
         assert!(error.to_string().contains("opacity"), "{error}");
+    }
+
+    #[test]
+    fn the_switcher_is_drawn_in_raisins_own_theme_unless_the_file_names_another() {
+        assert_eq!(config("").switcher.theme, "default");
+        assert_eq!(config("").palette, Palette::default());
+
+        let config = config(
+            r#"
+            [switcher]
+            theme = "light"
+            "#,
+        );
+
+        assert_eq!(config.switcher.theme, "light");
     }
 
     #[test]

@@ -9,8 +9,6 @@ import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
 
-import "Theme.js" as Theme
-
 Shape {
     id: sheet
 

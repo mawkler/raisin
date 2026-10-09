@@ -384,8 +384,8 @@ fn watch_clients(daemon: &Rc<Daemon>, listener: &UnixListener) -> Result<()> {
     Ok(())
 }
 
-/// Watches the configuration file, so that saving it is all it takes for the
-/// change to be in effect.
+/// Watches the configuration file, and the user's themes, so that saving
+/// either is all it takes for the change to be in effect.
 fn watch_config(daemon: &Rc<Daemon>, path: &Path) {
     let (Some(directory), Some(name)) = (path.parent(), path.file_name().map(OsString::from))
     else {
@@ -403,15 +403,29 @@ fn watch_config(daemon: &Rc<Daemon>, path: &Path) {
     // The directory rather than the file: an editor saves by writing a new
     // file and renaming it over the old one, which leaves a watch on the file
     // itself pointing at something nobody will write to again.
-    let watching = inotify.watches().add(
-        directory,
-        inotify::WatchMask::CLOSE_WRITE | inotify::WatchMask::MOVED_TO | inotify::WatchMask::CREATE,
-    );
+    let saved =
+        inotify::WatchMask::CLOSE_WRITE | inotify::WatchMask::MOVED_TO | inotify::WatchMask::CREATE;
 
-    if let Err(error) = watching {
-        eprintln!("raisin: not watching {}: {error}", directory.display());
-        return;
-    }
+    let config = match inotify.watches().add(directory, saved) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("raisin: not watching {}: {error}", directory.display());
+            return;
+        }
+    };
+
+    // Any theme, rather than the one in use: which one that is can change
+    // with the configuration, and saving one that isn't costs a reload.
+    // Watched only when there is a directory of them to watch.
+    let themes = crate::config::themes_directory()
+        .filter(|themes| themes.is_dir())
+        .and_then(|themes| match inotify.watches().add(&themes, saved) {
+            Ok(watch) => Some(watch),
+            Err(error) => {
+                eprintln!("raisin: not watching {}: {error}", themes.display());
+                None
+            }
+        });
 
     let (sender, receiver) = async_channel::unbounded();
 
@@ -423,7 +437,18 @@ fn watch_config(daemon: &Rc<Daemon>, path: &Path) {
                 break;
             };
 
-            if !events.any(|event| event.name == Some(&name)) {
+            let changed = events.any(|event| {
+                if event.wd == config {
+                    event.name == Some(&name)
+                } else {
+                    Some(&event.wd) == themes.as_ref()
+                        && event.name.is_some_and(|name| {
+                            Path::new(name).extension() == Some("toml".as_ref())
+                        })
+                }
+            });
+
+            if !changed {
                 continue;
             }
 

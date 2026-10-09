@@ -14,8 +14,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 
-import "Theme.js" as Theme
-
 Item {
     id: switcher
 
@@ -102,12 +100,6 @@ Item {
         return true;
     }
 
-    function withOpacity(colour, opacity) {
-        const solid = Qt.color(colour);
-
-        return Qt.rgba(solid.r, solid.g, solid.b, opacity);
-    }
-
     function resolve(length, screen) {
         if (!length)
             return 0;
@@ -132,7 +124,7 @@ Item {
         width: switcher.contentWidth + 2 * Theme.padSide
         height: hints.y + hints.height + Theme.sheetPadBottom + Theme.sheetInset
         radius: Theme.panelRadius
-        color: switcher.withOpacity(Theme.panel, switcher.backgroundOpacity)
+        color: Theme.withAlpha(Theme.panel, switcher.backgroundOpacity)
         border.width: 1
         border.color: Theme.panelEdge
 
@@ -195,7 +187,7 @@ Item {
             tabWidth: Theme.cellSize + Theme.cellGap
             tabTop: bar.y - Theme.tabRise
             tabbed: bar.tabbed
-            fill: switcher.withOpacity(Theme.sheetFill, switcher.foregroundOpacity)
+            fill: Theme.withAlpha(Theme.sheetFill, switcher.foregroundOpacity)
         }
 
         AppBar {

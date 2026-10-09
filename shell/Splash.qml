@@ -9,8 +9,6 @@
 
 import QtQuick
 
-import "Theme.js" as Theme
-
 Item {
     id: splash
 

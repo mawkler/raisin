@@ -26,7 +26,7 @@ use super::ipc;
 /// install alongside it.
 const SHELL: &[(&str, &str)] = &[
     ("shell.qml", include_str!("../../shell/shell.qml")),
-    ("Theme.js", include_str!("../../shell/Theme.js")),
+    ("Theme.qml", include_str!("../../shell/Theme.qml")),
     ("Switcher.qml", include_str!("../../shell/Switcher.qml")),
     ("AppBar.qml", include_str!("../../shell/AppBar.qml")),
     ("Sheet.qml", include_str!("../../shell/Sheet.qml")),

@@ -7,8 +7,6 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Widgets
 
-import "Theme.js" as Theme
-
 Item {
     id: card
 

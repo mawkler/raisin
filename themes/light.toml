@@ -1,0 +1,8 @@
+# A light theme: dark text on a pale panel, with a white sheet.
+
+background = "#e4e7ed"
+surface = "#f8f9fb"
+accent = "#3a64e0"
+text = "#3b404c"
+bright = "#13151a"
+muted = "#6b7284"

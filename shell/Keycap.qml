@@ -2,8 +2,6 @@
 
 import QtQuick
 
-import "Theme.js" as Theme
-
 Rectangle {
     id: keycap
 

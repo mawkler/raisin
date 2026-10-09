@@ -79,6 +79,7 @@ ShellRoot {
         switch (message.type) {
         case "config":
             root.settings = message;
+            Theme.palette = message.palette;
             break;
         case "session":
             root.scene = message;
