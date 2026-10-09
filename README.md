@@ -24,6 +24,7 @@ keybinds to write.
   - the same letter cycles through the windows, `Shift` + letter goes back
   - another letter switches to that application
   - `Ctrl` + letter opens a new window of the application
+  - the `close` key, if you set one, closes the highlighted window
   - releasing `Super` focuses the selected window, `Esc` cancels
 - Applications with nothing open are shown faintly, and their key launches them, flashing up
   their icon to say so.
@@ -55,6 +56,7 @@ mistake keeps the running configuration and logs what's wrong.
 next = "Tab"             # only bound while the switcher is open; Super is implied
 previous = "SHIFT + Tab"
 cancel = "Escape"
+close = "q"              # close the highlighted window; unset by default
 
 [keys.apps]              # Super + key
 t = "ghostty"
@@ -77,6 +79,17 @@ height = 150              # pixels
 
 [names]                   # by window class; otherwise the desktop entry's name
 brave-browser = "Brave"
+```
+
+Hyprland fires every bind on a key, so if you bind `Super` + your `close` key yourself, have it do
+nothing while the switcher is up, or it closes a second window:
+
+```lua
+hl.bind("SUPER + Q", function()
+    if #hl.get_layers({ namespace = "raisin" }) == 0 then
+        hl.dispatch(hl.dsp.window.close())
+    end
+end)
 ```
 
 ### Themes
