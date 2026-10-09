@@ -10,29 +10,29 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// Each theme by name, with the text of `themes/<name>.toml`.
+///
+/// A macro rather than a function, because `include_str!` needs its path
+/// before any function runs.
+macro_rules! themes {
+    ($($name:literal),* $(,)?) => {
+        &[$(($name, include_str!(concat!("../themes/", $name, ".toml")))),*]
+    };
+}
+
 /// The themes raisin comes with, by name. The first is the default.
-const BUILT_IN: &[(&str, &str)] = &[
-    ("default", include_str!("../themes/default.toml")),
-    ("light", include_str!("../themes/light.toml")),
-    (
-        "catppuccin-latte",
-        include_str!("../themes/catppuccin-latte.toml"),
-    ),
-    (
-        "catppuccin-frappe",
-        include_str!("../themes/catppuccin-frappe.toml"),
-    ),
-    (
-        "catppuccin-macchiato",
-        include_str!("../themes/catppuccin-macchiato.toml"),
-    ),
-    (
-        "catppuccin-mocha",
-        include_str!("../themes/catppuccin-mocha.toml"),
-    ),
-    ("nord", include_str!("../themes/nord.toml")),
-    ("one-dark", include_str!("../themes/one-dark.toml")),
-    ("tokyo-night", include_str!("../themes/tokyo-night.toml")),
+const BUILT_IN: &[(&str, &str)] = themes![
+    // keep-sorted start
+    "catppuccin-frappe",
+    "catppuccin-latte",
+    "catppuccin-macchiato",
+    "catppuccin-mocha",
+    "default",
+    "light",
+    "nord",
+    "one-dark",
+    "tokyo-night",
+    // keep-sorted end
 ];
 
 /// The six colours the switcher is drawn in.
