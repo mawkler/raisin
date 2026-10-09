@@ -236,7 +236,8 @@ Item {
 
                         NumberAnimation {
                             duration: Theme.duration
-                            easing.type: Easing.OutQuint
+                            easing.type: Easing.BezierSpline
+                            easing.bezierCurve: Theme.curve
                         }
                     }
 

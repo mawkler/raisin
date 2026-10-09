@@ -57,7 +57,8 @@ Item {
 
         NumberAnimation {
             duration: Theme.duration
-            easing.type: Easing.OutQuint
+            easing.type: Easing.BezierSpline
+            easing.bezierCurve: Theme.curve
         }
     }
 
@@ -137,6 +138,8 @@ Item {
 
             ColorAnimation {
                 duration: Theme.cycle
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: Theme.curve
             }
         }
     }

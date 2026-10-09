@@ -76,8 +76,10 @@ Singleton {
     readonly property real standin: 0.35
 
     // Every movement takes this long, on the curve Hyprland moves its own
-    // windows and layers on.
+    // windows and layers on: its easeOutQuint, quick to set off and a long
+    // while settling.
     readonly property int duration: 220
+    readonly property var curve: [0.23, 1, 0.32, 1, 1, 1]
     // Except the highlight moving from one window to the next, which happens
     // as fast as the key is pressed and has to keep up with it.
     readonly property int cycle: 120

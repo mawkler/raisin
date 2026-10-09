@@ -82,11 +82,9 @@ Item {
         cacheBuffer: 10000
         model: page.windowIds
 
-        highlightFollowsCurrentItem: true
-        highlightMoveDuration: page.animate ? Theme.cycle : 0
-        highlightMoveVelocity: -1
-        highlightResizeDuration: page.animate ? Theme.cycle : 0
-        highlightResizeVelocity: -1
+        // The highlight moves itself, on Hyprland's curve: the list's own
+        // following eases in and out alike, which reads as nearly linear.
+        highlightFollowsCurrentItem: false
         // Windows that don't fit scroll just far enough to keep the
         // highlighted one whole, with a little of the next one showing, so
         // that it is plain there is more.
@@ -95,18 +93,42 @@ Item {
         preferredHighlightEnd: width - Theme.peek
 
         highlight: Rectangle {
+            x: list.currentItem?.x ?? 0
+            width: list.currentItem?.width ?? 0
+            height: list.currentItem?.height ?? 0
             radius: Theme.highlightRadius
             color: Theme.selection
             border.width: 1
             border.color: Theme.selectionEdge
             opacity: page.current ? 1 : 0
 
+            Behavior on x {
+                enabled: page.animate
+
+                NumberAnimation {
+                    duration: Theme.cycle
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Theme.curve
+                }
+            }
+
+            Behavior on width {
+                enabled: page.animate
+
+                NumberAnimation {
+                    duration: Theme.cycle
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Theme.curve
+                }
+            }
+
             Behavior on opacity {
                 enabled: page.animate
 
                 NumberAnimation {
                     duration: Theme.duration
-                    easing.type: Easing.OutQuint
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: Theme.curve
                 }
             }
         }
