@@ -95,7 +95,7 @@ max_height = "40%"        # thumbnails shrink to keep the switcher within this
 icons = true              # show each application's icon, rather than its initials
 background_opacity = 0.92 # how solid the panel is, from 0 (not at all) to 1
 foreground_opacity = 1    # and the sheet the windows lie on, with its tab
-theme = "default"         # the colours: "default", "light", or one of your own
+theme = "default"         # the colours: "default", "light", "catppuccin-mocha", or your own
 
 [previews]
 enabled = true # show what each window looks like
@@ -138,9 +138,11 @@ half-saved file is a normal thing for an editor to leave behind for a moment.
 ### Themes
 
 A theme sets the six colours the switcher is drawn in, and raisin works out the rest (borders,
-keys, the selected window's outline) from them. It comes with two, `default` and `light`. To make
-your own, put a file in `~/.config/raisin/themes`, and name it in `[switcher]` without its `.toml`:
-`theme = "nord"` for `~/.config/raisin/themes/nord.toml`.
+keys, the selected window's outline) from them. It comes with `default` and `light`, and with
+[Catppuccin](https://github.com/catppuccin/catppuccin)'s four flavours: `catppuccin-latte`,
+`catppuccin-frappe`, `catppuccin-macchiato` and `catppuccin-mocha`. To make your own, put a file in
+`~/.config/raisin/themes`, and name it in `[switcher]` without its `.toml`: `theme = "nord"` for
+`~/.config/raisin/themes/nord.toml`.
 
 ```toml
 background = "#2e3440" # the panel everything lies on
